@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transactions</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='../static/css/transactions.css') }}">
+</head>
+<body>
+    <div class="page-container">
+        <header class="page-header">
+            <h1>Transactions</h1>
+        </header>
+
+        <div class="table-wrapper">
+            <table class="transactions-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Category</th>
+                        <th>Amount (€)</th>
+                    </tr>
+                </thead>
+
+<tbody>
+    {% for tx in transactions %}
+    <!-- Main visible row -->
+    <tr class="main-row">
+        <td>{{ tx.date }}</td>
+        <td>{{ tx.description }}</td>
+        <td>{{ tx.category }}</td>
+        <td class="amount-cell">
+            {% if tx.amount_eur < 0 %}
+                <span class="amount amount-negative">
+                    {{ tx.amount_eur }} €
+                </span>
+            {% else %}
+                <span class="amount amount-positive">
+                    +{{ tx.amount_eur }} €
+                </span>
+            {% endif %}
+        </td>
+    </tr>
+
+    <!-- Details row as a visible card under the row -->
+    <tr class="details-row">
+        <td colspan="4">
+            <div class="details-card">
+                <div class="details-card-header">
+                    <span class="details-label">Transaction details</span>
+                    <span class="details-amount-pill
+                        {% if tx.amount_eur < 0 %}details-amount-negative{% else %}details-amount-positive{% endif %}">
+                        {% if tx.amount_eur < 0 %}
+                            {{ tx.amount_eur }} €
+                        {% else %}
+                            +{{ tx.amount_eur }} €
+                        {% endif %}
+                    </span>
+                </div>
+
+                <ul class="details-list">
+                    <li><span>Account:</span> {{ tx.account }}</li>
+                    <li><span>Date:</span> {{ tx.date }}</li>
+                    <li><span>Description:</span> {{ tx.description }}</li>
+                    <li><span>Category:</span> {{ tx.category }}</li>
+                    <li>
+                        <span>Original amount:</span>
+                        {{ tx.amount_original }} {{ tx.currency_original }}
+                    </li>
+                    <li>
+                        <span>Amount in EUR:</span>
+                        {{ tx.amount_eur }} €
+                    </li>
+                </ul>
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+
+
+
+
+            </table>
+        </div>
+    </div>
+</body>
+</html>

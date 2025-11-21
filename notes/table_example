@@ -1,0 +1,8 @@
+I want these columns shown:
+Date, Description, Amount(currency symbol and amount)
+Then when clicked on that transaction you can see all the info stored about the specific transaction
+
+
+Filters:
+- By default there will be shown previous month, but you can use calendar to choose any month or some time range you want
+- Filter by categories, so you can see all the transactions only of the category you chose
