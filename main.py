@@ -1,13 +1,21 @@
 from datetime import date, timedelta
-from fastapi import FastAPI
-from fastapi import Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+
+from db import Base, engine, SessionLocal
+from sqlalchemy.orm import Session
+import models
+from models import Transaction
+
+# Create database tables (only creates them if they don't exist)
+Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
-
 
 
 fake_transactions = [
@@ -126,41 +134,67 @@ fake_transactions = [
 
 
 
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+
+    finally:
+        db.close()
+
+
+
+
+
+
+
+
+
+# -- routes
+
+
+
+
 @app.get("/")
 def read_root():
     return {"message": "My finance app is running"}
 
 @app.get("/transactions")
 def transactions_page(
-    request: Request,
-    start_date: str | None = None,
-    end_date: str | None = None,
+    request: Request, 
+    db: Session = Depends(get_db)
 ):
-    # If user didn't pass dates, default to previous month
-    if not start_date or not end_date:
-        today = date.today()
-        first_of_this_month = today.replace(day=1)
-        last_of_prev_month = first_of_this_month - timedelta(days=1)
-        first_of_prev_month = last_of_prev_month.replace(day=1)
+    
 
-        start_date = first_of_prev_month.isoformat()  # YYYY-MM-DD
-        end_date = last_of_prev_month.isoformat()     # YYYY-MM-DD
-
-    # TODO: load all transactions from DB or list
-    all_transactions = fake_transactions
-
-    # Filter by date range
-    filtered = [
-        tx for tx in all_transactions
-        if start_date <= tx["date"] <= end_date   # assuming tx["date"] is "YYYY-MM-DD"
-    ]
-
+    # Query all transactions
+    transactions = db.query(Transaction).order_by(Transaction.date.desc()).all()
+    print (transactions[0].id)
     return templates.TemplateResponse(
-        "transactions_new.html",
+        "transactions.html",
         {
             "request": request,
-            "transactions": all_transactions,
-            "start_date": start_date,
-            "end_date": end_date,
+            "transactions": transactions,
         },
     )
+
+
+@app.post("/add-test-transaction")
+def add_test_transaction(db: Session = Depends(get_db)):
+
+    test_tx = Transaction(
+        date=date.today(),
+        description="Test transaction",
+        currency_original="EUR",
+        amount_original=-10.0,
+        amount_eur=-10.0,
+        account_name="Test Account",
+        category=None,
+        notes=None,
+    )
+
+
+    db.add(test_tx)
+    db.commit()
+    db.refresh(test_tx)
+
+    return {"message": "Test transaction added", "id": test_tx.id}

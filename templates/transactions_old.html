@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions</title>
+</head>
+<body>
+    <table border="1" cellpadding="5">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Currency</th>
+                <th>Amount(€)</th>
+                <th>Category</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for tx in transactions %}
+            <tr>
+                <td>{{tx.id}}</td>
+                <td>{{tx.date}}</td>
+                <td>{{tx.account}}</td>
+                <td>{{tx.description}}</td>
+                <td>{{tx.amount_original}}</td>
+                <td>{{tx.currency_original}}</td>
+                <td>{{tx.amount_eur}}</td>
+                <td>{{tx.category}}</td>
+                <td>{{tx.notes}}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
