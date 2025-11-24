@@ -1,13 +1,20 @@
+# main.py
+
 from datetime import date, timedelta
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
+from fastapi.responses import HTMLResponse
 
 from db import Base, engine, SessionLocal
 from sqlalchemy.orm import Session
 import models
 from models import Transaction
+
+from typing import List
+
+
+
 
 # Create database tables (only creates them if they don't exist)
 Base.metadata.create_all(bind=engine)
@@ -18,123 +25,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-fake_transactions = [
-    {
-        "id": 1,
-        "date": "2025-01-02",
-        "account": "Revolut",
-        "description": "Coffee shop",
-        "amount_original": -3.50,
-        "currency_original": "EUR",
-        "amount_eur": -3.50,
-        "category": "Food & Drinks",
-        "notes": "latte"
-    },
-    {
-        "id": 2,
-        "date": "2025-01-03",
-        "account": "Erste Bank",
-        "description": "Salary",
-        "amount_original": 950.00,
-        "currency_original": "EUR",
-        "amount_eur": 950.00,
-        "category": "Income",
-        "notes": ""
-    },
-    {
-        "id": 3,
-        "date": "2025-01-05",
-        "account": "Cash",
-        "description": "Groceries",
-        "amount_original": -28.40,
-        "currency_original": "EUR",
-        "amount_eur": -28.40,
-        "category": "Groceries",
-        "notes": ""
-    },
-    {
-        "id": 4,
-        "date": "2025-01-07",
-        "account": "Revolut",
-        "description": "Netflix subscription",
-        "amount_original": -9.99,
-        "currency_original": "EUR",
-        "amount_eur": -9.99,
-        "category": "Entertainment",
-        "notes": ""
-    },
-    {
-        "id": 5,
-        "date": "2025-01-10",
-        "account": "PBZ",
-        "description": "Student scholarship",
-        "amount_original": 300.00,
-        "currency_original": "EUR",
-        "amount_eur": 300.00,
-        "category": "Income",
-        "notes": ""
-    },
-    {
-        "id": 6,
-        "date": "2025-01-12",
-        "account": "Revolut",
-        "description": "Fuel",
-        "amount_original": -45.00,
-        "currency_original": "EUR",
-        "amount_eur": -45.00,
-        "category": "Transport",
-        "notes": ""
-    },
-    {
-        "id": 7,
-        "date": "2025-01-15",
-        "account": "Cash",
-        "description": "Dinner out",
-        "amount_original": -18.70,
-        "currency_original": "EUR",
-        "amount_eur": -18.70,
-        "category": "Food & Drinks",
-        "notes": ""
-    },
-    {
-        "id": 8,
-        "date": "2025-01-18",
-        "account": "Erste Bank",
-        "description": "Gym membership",
-        "amount_original": -27.00,
-        "currency_original": "EUR",
-        "amount_eur": -27.00,
-        "category": "Health",
-        "notes": ""
-    },
-    {
-        "id": 9,
-        "date": "2025-01-22",
-        "account": "Revolut",
-        "description": "Electricity bill",
-        "amount_original": -55.30,
-        "currency_original": "EUR",
-        "amount_eur": -55.30,
-        "category": "Utilities",
-        "notes": ""
-    },
-    {
-        "id": 10,
-        "date": "2025-01-28",
-        "account": "Erste Bank",
-        "description": "Freelance payment",
-        "amount_original": 120.00,
-        "currency_original": "EUR",
-        "amount_eur": 120.00,
-        "category": "Income",
-        "notes": ""
-    },
-]
 
 
-
-
-def get_db():
+# get database session
+def get_db(): 
     db = SessionLocal()
     try:
         yield db
@@ -164,11 +58,8 @@ def transactions_page(
     request: Request, 
     db: Session = Depends(get_db)
 ):
-    
-
     # Query all transactions
     transactions = db.query(Transaction).order_by(Transaction.date.desc()).all()
-    print (transactions[0].id)
     return templates.TemplateResponse(
         "transactions.html",
         {
@@ -176,6 +67,7 @@ def transactions_page(
             "transactions": transactions,
         },
     )
+
 
 
 @app.post("/add-test-transaction")
@@ -198,3 +90,36 @@ def add_test_transaction(db: Session = Depends(get_db)):
     db.refresh(test_tx)
 
     return {"message": "Test transaction added", "id": test_tx.id}
+
+
+@app.get("/upload")
+def upload_page(request: Request):
+    return templates.TemplateResponse(
+        "upload.html",
+        {"request": request}
+    )
+
+@app.post("/upload")
+async def upload_process(
+    request: Request,
+    csv_files: List[UploadFile] = File(...),
+    banks: List[str] = Form(...),
+    db: Session = Depends(get_db),
+):
+    processed = []
+
+    for file, bank in zip(csv_files, banks):
+        content_bytes = await file.read()
+        text = content_bytes.decode("utf-8", errors="ignore")
+        lines = text.splitlines()
+
+        # TODO: here later you will parse CSV into transactions
+        # For now we just return some basic info
+        processed.append({
+            "filename": file.filename,
+            "bank": bank,
+            "line_count": len(lines),
+        })
+
+    # For now, just return JSON so you see it works
+    return {"processed": processed}

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload CSVs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet" href="{{ url_for('static', path='css/upload.css') }}">
+</head>
+<body>
+<main>
+    <!-- NEW: wrap everything in a form -->
+    <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload">
+        <h1>Upload CSVs</h1>
+        <div class="subtitle">Import your bank statements as CSV files to review and categorize transactions.</div>
+
+        <!-- Drag & drop area -->
+        <label class="upload-area" id="upload-area" for="file-input">
+            <div class="upload-icon">⬆︎</div>
+            <div>
+                <div class="upload-text-title">Drag & drop CSV files here</div>
+                <div class="upload-text-subtitle">or click to browse from your Mac</div>
+            </div>
+        </label>
+
+        <!-- IMPORTANT: add name="csv_files" so FastAPI can see it -->
+        <input id="file-input" name="csv_files" type="file" accept=".csv,text/csv" multiple>
+
+        <!-- Selected files list -->
+        <section class="file-list" id="file-list">
+            <div class="file-list-header" id="file-list-header" style="display: none;">
+                Selected files
+            </div>
+            <div id="file-rows"></div>
+        </section>
+
+        <!-- NEW: Continue button -->
+        <button type="submit" class="continue-button">
+            Continue
+        </button>
+    </form>
+</main>
+
+<!-- Preview modal -->
+<div id="preview-modal" class="preview-modal" aria-hidden="true">
+    <div class="preview-dialog" role="dialog" aria-modal="true">
+        <div class="preview-header">
+            <div>
+                <div id="preview-title" class="preview-title"></div>
+                <div class="preview-subtitle">First lines of the CSV file (read-only preview).</div>
+            </div>
+            <button type="button" class="preview-close" id="preview-close">×</button>
+        </div>
+        <pre id="preview-content" class="preview-content"></pre>
+    </div>
+</div>
+
+<!-- Jinja-friendly JS path -->
+<script src="{{ url_for('static', path='js/upload.js') }}"></script>
+</body>
+</html>
