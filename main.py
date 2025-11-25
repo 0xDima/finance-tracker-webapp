@@ -1,6 +1,7 @@
 # main.py
 
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+
 from fastapi import FastAPI, Request, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,8 +14,18 @@ from models import Transaction
 
 from typing import List
 
+import uuid
+import os
+
+from services.csv_import import *
 
 
+
+
+
+
+
+PENDING_BATCHES = {}
 
 # Create database tables (only creates them if they don't exist)
 Base.metadata.create_all(bind=engine)
@@ -106,20 +117,49 @@ async def upload_process(
     banks: List[str] = Form(...),
     db: Session = Depends(get_db),
 ):
-    processed = []
+    batch_id = str(uuid.uuid4())
 
+    # Folder: uploads/batch_<id>
+    folder = f"uploads/batch_{batch_id}"
+    os.makedirs(folder, exist_ok=True)
+
+    saved_paths = []  # store filepaths for later cleanup
+
+    # ---- 2. Save each file to the batch folder ----
     for file, bank in zip(csv_files, banks):
-        content_bytes = await file.read()
-        text = content_bytes.decode("utf-8", errors="ignore")
-        lines = text.splitlines()
+        file_location = os.path.join(folder, file.filename)
+        saved_paths.append(file_location)
 
-        # TODO: here later you will parse CSV into transactions
-        # For now we just return some basic info
-        processed.append({
-            "filename": file.filename,
-            "bank": bank,
-            "line_count": len(lines),
-        })
+        with open(file_location, "wb") as f:
+            f.write(await file.read())
 
-    # For now, just return JSON so you see it works
-    return {"processed": processed}
+    # ---- 3. Create batch structure in memory ----
+    PENDING_BATCHES[batch_id] = {
+        "files": saved_paths,        # paths to saved CSVs
+        "transactions": {},          # will be filled by parse_csvs
+        "order": [],                 # order of temp IDs
+        "banks": banks,              # for reference
+    }
+
+    batch = PENDING_BATCHES[batch_id]
+
+    # ---- 4. Call parse_csvs to fill this batch ----
+    parse_csvs(batch, batch_id, saved_paths, banks)
+    print (
+        f"""
+        batch: {batch}
+        batchId: {batch_id}
+        saved_paths: {saved_paths}
+        banks: {banks}
+
+    """)
+
+
+    # For debugging: see what was parsed
+    tx_list = [batch["transactions"][tid] for tid in batch["order"]]
+
+    return {
+        "batch_id": batch_id,
+        "transaction_count": len(tx_list),
+        "transactions": tx_list[:10],
+    }
