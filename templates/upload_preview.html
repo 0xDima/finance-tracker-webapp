@@ -1,0 +1,191 @@
+<!-- upload_preview.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Preview Imported Transactions</title>
+
+    <!-- Extra styles just for this page -->
+    <link rel="stylesheet" href="{{ url_for('static', path='../static/css/upload_preview.css') }}">
+</head>
+<body>
+    <div class="page-container">
+
+        <!-- Whole page is one form -->
+        <form id="preview-form" method="post" action="/upload/commit">
+            <input type="hidden" name="batch_id" value="{{ batch_id }}">
+
+            <!-- Header with actions -->
+            <header class="page-header">
+                <div class="page-header-top">
+                    <div>
+                        <h1>Preview imported transactions</h1>
+                        <p class="page-subtitle">
+                            Review, edit, or delete transactions before importing them into your database.
+                        </p>
+                    </div>
+                    <div class="page-actions">
+                        <a href="/transactions" class="btn-secondary" type="button">
+                            Cancel
+                        </a>
+                        <button class="btn-primary" type="submit">
+                            Import
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Table -->
+            <div class="table-wrapper">
+                <table class="transactions-table">
+                    <thead>
+                        <tr>
+                            <th class="delete-header">Delete</th>
+                            <th>Temp ID</th>
+                            <th class="date-header">Date</th>
+                            <th>Account</th>
+                            <th>Description</th>
+                            <th>Original amount</th>
+                            <th>Amount (€)</th>
+                            <th>Category</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for tx in transactions %}
+                        <tr class="main-row" data-temp-id="{{ tx.temp_id }}">
+                            <!-- Delete checkbox -->
+                            <td class="delete-cell">
+                                <input
+                                    type="checkbox"
+                                    class="delete-checkbox"
+                                    name="delete_ids"
+                                    value="{{ tx.temp_id }}"
+                                >
+                            </td>
+
+                            <!-- Temp ID (now just text, no modal) -->
+                            <td class="temp-id-cell">
+                                <span class="temp-id-label">
+                                    {{ tx.temp_id }}
+                                </span>
+                            </td>
+
+                            <!-- Visible cells (inline editable) -->
+                            <td class="date-cell" data-field="date">{{ tx.date }}</td>
+                            <td class="account-cell" data-field="account_name">{{ tx.account_name }}</td>
+                            <td class="description-cell" data-field="description">{{ tx.description }}</td>
+
+                            <td class="amount-original-cell" data-field="amount_original">
+                                {{ tx.amount_original }} {{ tx.currency_original }}
+                            </td>
+
+                            <td class="amount-eur-cell" data-field="amount_eur">
+                                {% set raw_amt = tx.amount_eur %}
+                                {% if raw_amt is not none %}
+                                    {% set amt = raw_amt|float %}
+                                    {% if amt < 0 %}
+                                        <span class="amount amount-negative">
+                                            {{ amt }} €
+                                        </span>
+                                    {% else %}
+                                        <span class="amount amount-positive">
+                                            +{{ amt }} €
+                                        </span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="amount">
+                                        --
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Category: now a <select> -->
+                            <td class="category-cell">
+                                {% set current_cat = tx.category or '' %}
+                                <select
+                                    class="category-select"
+                                    data-temp-id="{{ tx.temp_id }}"
+                                >
+                                    <option value="" {% if current_cat == '' %}selected{% endif %}></option>
+                                    <option value="Groceries" {% if current_cat == 'Groceries' %}selected{% endif %}>Groceries</option>
+                                    <option value="Transportation" {% if current_cat == 'Transportation' %}selected{% endif %}>Transportation</option>
+                                    <option value="Coffee" {% if current_cat == 'Coffee' %}selected{% endif %}>Coffee</option>
+                                    <option value="Dining & Restaurants" {% if current_cat == 'Dining & Restaurants' %}selected{% endif %}>Dining & Restaurants</option>
+                                    <option value="Shopping" {% if current_cat == 'Shopping' %}selected{% endif %}>Shopping</option>
+                                    <option value="Home" {% if current_cat == 'Home' %}selected{% endif %}>Home</option>
+                                    <option value="Cash Withdrawals" {% if current_cat == 'Cash Withdrawals' %}selected{% endif %}>Cash Withdrawals</option>
+                                    <option value="Entertainment & Subscriptions" {% if current_cat == 'Entertainment & Subscriptions' %}selected{% endif %}>Entertainment & Subscriptions</option>
+                                    <option value="Travelling" {% if current_cat == 'Travelling' %}selected{% endif %}>Travelling</option>
+                                    <option value="Education & Studying" {% if current_cat == 'Education & Studying' %}selected{% endif %}>Education & Studying</option>
+                                    <option value="Other" {% if current_cat == 'Other' %}selected{% endif %}>Other</option>
+                                    <option value="Investments" {% if current_cat == 'Investments' %}selected{% endif %}>Investments</option>
+                                </select>
+                            </td>
+
+                            <td class="notes-cell" data-field="notes">
+                                {% if tx.notes %}
+                                    {{ tx.notes[:40] }}{% if tx.notes|length > 40 %}…{% endif %}
+                                {% endif %}
+                            </td>
+
+                            <!-- Hidden inputs representing the "real" data sent to backend -->
+                            <td class="hidden-inputs-cell">
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][date]"
+                                    value="{{ tx.date }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][account_name]"
+                                    value="{{ tx.account_name }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][description]"
+                                    value="{{ tx.description }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][amount_original]"
+                                    value="{{ tx.amount_original }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][currency_original]"
+                                    value="{{ tx.currency_original }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][amount_eur]"
+                                    value="{{ tx.amount_eur }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][category]"
+                                    value="{{ tx.category or '' }}"
+                                >
+                                <input
+                                    type="hidden"
+                                    name="transactions[{{ tx.temp_id }}][notes]"
+                                    value="{{ tx.notes or '' }}"
+                                >
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <p class="table-hint">
+                    Rows with a checked box will be <strong>excluded</strong> when you click “Import”.
+                </p>
+            </div>
+        </form>
+    </div>
+
+    <!-- JS -->
+    <script src="{{ url_for('static', path='../static/js/upload_preview.js') }}"></script>
+</body>
+</html>

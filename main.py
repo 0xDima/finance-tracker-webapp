@@ -158,8 +158,65 @@ async def upload_process(
     # For debugging: see what was parsed
     tx_list = [batch["transactions"][tid] for tid in batch["order"]]
 
+
     return {
         "batch_id": batch_id,
         "transaction_count": len(tx_list),
-        "transactions": tx_list[:10],
+        "transactions": tx_list,
     }
+
+
+
+@app.post("/upload/preview", response_class=HTMLResponse)
+async def upload_preview(
+    request: Request,
+    csv_files: List[UploadFile] = File(...),
+    banks: List[str] = Form(...),
+):
+    # 1) Create a new batch id
+    batch_id = str(uuid.uuid4())
+
+    # 2) Create folder uploads/batch_<id>
+    folder = f"uploads/batch_{batch_id}"
+    os.makedirs(folder, exist_ok=True)
+
+    saved_paths = []
+
+    # 3) Save each uploaded CSV into the batch folder
+    for file, bank in zip(csv_files, banks):
+        file_location = os.path.join(folder, file.filename)
+        saved_paths.append(file_location)
+
+        with open(file_location, "wb") as f:
+            f.write(await file.read())
+
+    # 4) Initialize batch entry in memory
+    PENDING_BATCHES[batch_id] = {
+        "files": saved_paths,
+        "transactions": {},
+        "order": [],
+        "banks": banks,
+    }
+
+    batch = PENDING_BATCHES[batch_id]
+
+    # 5) Parse CSVs and fill the batch with normalized transactions
+    parse_csvs(batch, batch_id, saved_paths, banks)
+
+    # 6) Build a list of transactions including temp_id for the template
+    transactions_for_template = []
+    for temp_id in batch["order"]:
+        tx_data = batch["transactions"][temp_id].copy()
+        tx_data["temp_id"] = temp_id
+        transactions_for_template.append(tx_data)
+
+        
+    # 7) Render preview page with real data
+    return templates.TemplateResponse(
+        "upload_preview.html",
+        {
+            "request": request,
+            "batch_id": batch_id,
+            "transactions": transactions_for_template,
+        },
+    )

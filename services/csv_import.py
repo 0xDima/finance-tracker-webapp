@@ -38,17 +38,17 @@ def parse_revolut(file_path: str) -> List[Dict]:
 
     # Drop columns you don't need
     df = df.drop(
-        columns=["Type", "Product", "Started Date", "Fee", "State", "Balance"],
+        columns=["Type", "Product", "Completed Date", "Fee", "State", "Balance"],
         errors="ignore",
     )
 
     # Completed Date is the effective transaction date
-    df["Completed Date"] = pd.to_datetime(df["Completed Date"]).dt.date
+    df["Started Date"] = pd.to_datetime(df["Started Date"]).dt.date
 
     # Rename to normalized schema
     df = df.rename(
         columns={
-            "Completed Date": "date",
+            "Started Date": "date",
             "Description": "description",
             "Amount": "amount_original",
             "Currency": "currency_original",
