@@ -12,12 +12,12 @@ body {
 
 /* Main page container (fills height, centered on big screens) */
 .page-container {
-    max-width: 1200px;          /* centered on ultra-wide screens */
+    max-width: 1400px;          /* centered on ultra-wide screens */
     margin: 0 auto;
     padding: 24px 32px 40px;
     min-height: 100vh;          /* full page height */
     box-sizing: border-box;
-
+    
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -133,7 +133,18 @@ body {
     text-align: right;
 }
 
-/* Date column wider + no wrapping */
+/* ---------- TEMP ID: hide column visually ---------- */
+
+.temp-id-header {
+    display: none !important;
+}
+
+.temp-id-cell {
+    display: none !important;
+}
+
+/* ---------- Date column: wide + centered ---------- */
+
 .date-header {
     min-width: 140px;
 }
@@ -143,7 +154,34 @@ body {
     min-width: 140px;
 }
 
-/* Stripe background only for main rows */
+/* stronger centering overrides */
+.transactions-table thead th.date-header {
+    text-align: center !important;
+}
+.transactions-table tbody td.date-cell {
+    text-align: center !important;
+}
+
+/* ---------- Notes column: wider + centered ---------- */
+
+.notes-header {
+    min-width: 320px;
+}
+.notes-cell {
+    min-width: 320px;
+    max-width: 460px;
+    white-space: normal;
+}
+
+/* center notes text */
+.transactions-table thead th.notes-header {
+    text-align: center !important;
+}
+.transactions-table tbody td.notes-cell {
+    text-align: center !important;
+}
+
+/* ===== Stripe background only for main rows ===== */
 .transactions-table tbody tr.main-row:nth-child(odd) {
     background-color: #ffffff;
 }
@@ -206,17 +244,6 @@ body {
     height: 16px;
 }
 
-/* Temp ID label */
-.temp-id-cell {
-    white-space: nowrap;
-}
-
-.temp-id-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #4b5563;
-}
-
 /* Hide cell that only contains hidden inputs */
 .hidden-inputs-cell {
     display: none;
@@ -241,17 +268,41 @@ body {
     opacity: 0.8;
 }
 
-/* ===== Category select ===== */
+/* ===== Category select (Notion-style pill) ===== */
+
+.category-cell {
+    min-width: 160px;
+}
 
 .category-select {
     width: 100%;
     box-sizing: border-box;
-    border-radius: 8px;
-    border: 1px solid #d1d5db;
-    padding: 4px 6px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    padding: 4px 10px;
     font-size: 13px;
     font-family: inherit;
+    background-color: #f3f4f6;
+    color: #374151;
+    cursor: pointer;
+
+    /* remove default arrow (most browsers) */
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+
+    background-image: linear-gradient(45deg, #9ca3af 50%, transparent 50%),
+                      linear-gradient(135deg, transparent 50%, #9ca3af 50%);
+    background-position: calc(100% - 12px) 10px, calc(100% - 8px) 10px;
+    background-size: 4px 4px, 4px 4px;
+    background-repeat: no-repeat;
+}
+
+.category-select:focus {
+    outline: none;
+    border-color: #4f46e5;
     background-color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.25);
 }
 
 /* ===== Inline editing input ===== */

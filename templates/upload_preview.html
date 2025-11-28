@@ -41,14 +41,15 @@
                     <thead>
                         <tr>
                             <th class="delete-header">Delete</th>
-                            <th>Temp ID</th>
+                            <!-- TEMP ID: still in DOM but hidden via CSS -->
+                            <th class="temp-id-header">Temp ID</th>
                             <th class="date-header">Date</th>
                             <th>Account</th>
                             <th>Description</th>
                             <th>Original amount</th>
                             <th>Amount (€)</th>
                             <th>Category</th>
-                            <th>Notes</th>
+                            <th class="notes-header">Notes</th>
                         </tr>
                     </thead>
 
@@ -65,7 +66,7 @@
                                 >
                             </td>
 
-                            <!-- Temp ID (now just text, no modal) -->
+                            <!-- Temp ID (hidden visually) -->
                             <td class="temp-id-cell">
                                 <span class="temp-id-label">
                                     {{ tx.temp_id }}
@@ -101,7 +102,7 @@
                                 {% endif %}
                             </td>
 
-                            <!-- Category: now a <select> -->
+                            <!-- Category: <select> -->
                             <td class="category-cell">
                                 {% set current_cat = tx.category or '' %}
                                 <select
