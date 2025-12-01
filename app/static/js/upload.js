@@ -1,3 +1,5 @@
+//upload.js
+
 const uploadArea = document.getElementById("upload-area");
 const fileInput = document.getElementById("file-input");
 const fileRowsContainer = document.getElementById("file-rows");

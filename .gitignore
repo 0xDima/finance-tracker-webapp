@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.so
+
+# Virtualenv
+venv/
+.env
+.env.*  
+
+# OS
+.DS_Store
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Local data
+database/finance.db
+uploads/
+notes/*
+*.csv
+
+# Uvicorn / logs
+*.log
