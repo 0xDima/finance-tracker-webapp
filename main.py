@@ -1,25 +1,26 @@
 # main.py
 
 from datetime import date, timedelta, datetime
+import re
 
 from fastapi import FastAPI, Request, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from db import Base, engine, SessionLocal
 from sqlalchemy.orm import Session
 import models
 from models import Transaction
 
-from typing import List
+from typing import List, Any, Optional, Dict
 
 import uuid
 import os
 
 from services.csv_import import *
 
-
+from services.import_helpers import build_transaction_from_dict
 
 
 
@@ -220,3 +221,161 @@ async def upload_preview(
             "transactions": transactions_for_template,
         },
     )
+
+
+
+TRANSACTION_KEY_RE = re.compile(
+    r"^transactions\[(?P<temp_id>.+?)\]\[(?P<field>.+?)\]$"
+)
+
+@app.post("/upload/review", response_class=HTMLResponse)
+async def upload_review(request: Request):
+    """
+    Receive edited transactions from the preview page.
+    - Parse nested field names like transactions[t1][date]
+    - Apply delete_ids
+    - Convert numeric fields
+    - Show read-only review page with 'Back' + 'Save to database'
+    """
+
+    form = await request.form()
+
+    batch_id = form.get("batch_id")
+    delete_ids: List[str] = form.getlist("delete_ids")
+
+    # 1) Rebuild raw_tx: { "t1": { "date": "...", "category": "...", ... }, ... }
+    raw_tx: Dict[str, Dict[str, Any]] = {}
+
+    for key, value in form.items():
+        match = TRANSACTION_KEY_RE.match(key)
+        if not match:
+            continue
+
+        temp_id = match.group("temp_id")
+        field = match.group("field")
+
+        if temp_id not in raw_tx:
+            raw_tx[temp_id] = {}
+
+        raw_tx[temp_id][field] = value
+
+    # 2) Clean + convert + skip deleted
+    cleaned: List[Dict[str, Any]] = []
+
+    for temp_id, tx_data in raw_tx.items():
+        if temp_id in delete_ids:
+            continue
+
+        # Build a very explicit dict so we know what goes to the template
+        tx: Dict[str, Any] = {
+            "temp_id": temp_id,
+            "date": tx_data.get("date") or "",
+            "account_name": tx_data.get("account_name") or "",
+            "description": tx_data.get("description") or "",
+            "currency_original": tx_data.get("currency_original") or "",
+            "category": tx_data.get("category") or "",      # 👈 ensure category exists
+            "notes": tx_data.get("notes") or "",
+        }
+
+        # amount_original
+        try:
+            tx["amount_original"] = float(tx_data.get("amount_original"))
+        except Exception:
+            tx["amount_original"] = None
+
+        # amount_eur
+        try:
+            raw_eur = tx_data.get("amount_eur")
+            tx["amount_eur"] = float(raw_eur) if raw_eur not in (None, "", "None") else None
+        except Exception:
+            tx["amount_eur"] = None
+
+        cleaned.append(tx)
+
+    # 3) Save into pending batches for /upload/save-batch
+    if batch_id:
+        if batch_id not in PENDING_BATCHES:
+            PENDING_BATCHES[batch_id] = {}
+        PENDING_BATCHES[batch_id]["final"] = cleaned
+
+    # 4) Render read-only review page
+    return templates.TemplateResponse(
+        "upload_review.html",
+        {
+            "request": request,
+            "batch_id": batch_id,
+            "transactions": cleaned,
+        },
+    )
+
+
+# On success: go to the main transactions page
+@app.post("/upload/save-batch")
+async def save_batch(batch_id: str = Form(...)):
+    """
+    FINAL VERSION:
+    - Take cleaned tx dicts from PENDING_BATCHES[batch_id]["final"]
+    - Convert each dict -> Transaction ORM object (using helper)
+    - Insert them into the database
+    - Redirect to /transactions
+    """
+
+    batch = PENDING_BATCHES.get(batch_id)
+
+    if not batch or "final" not in batch:
+        print(f"[save-batch] No final data found for batch_id={batch_id!r}")
+        # In this case just go back to transactions page
+        return RedirectResponse(url="/transactions", status_code=303)
+
+    final = batch["final"]  # list of dicts from /upload/review
+
+    print(f"\n[save-batch] Preparing to insert {len(final)} transactions for batch_id={batch_id!r}")
+
+    db = SessionLocal()
+    try:
+        orm_objects = []
+
+        for i, tx_dict in enumerate(final, start=1):
+            try:
+                t = build_transaction_from_dict(tx_dict)
+                orm_objects.append(t)
+
+                # Optional: debug log
+                print(f"  [#{i}] {t.date} | {t.description} | {t.amount_eur} EUR | {t.category}")
+            except Exception as e:
+                print(f"[save-batch] ERROR converting tx_dict #{i}: {e!r}")
+                print("  Raw dict:", tx_dict)
+
+        if not orm_objects:
+            print("[save-batch] No valid transactions to insert.")
+            return RedirectResponse(url="/transactions", status_code=303)
+
+        # Insert all at once
+        db.add_all(orm_objects)
+        db.commit()
+        print(f"[save-batch] Successfully inserted {len(orm_objects)} transactions for batch {batch_id!r}")
+
+        # Optional: clean up from memory
+        PENDING_BATCHES.pop(batch_id, None)
+
+    except Exception as e:
+        db.rollback()
+        print(f"[save-batch] ERROR during DB insert: {e!r}")
+        # If you want, you can render an error HTML page instead:
+        return HTMLResponse(
+            f"""
+            <html>
+            <body style="font-family:sans-serif; padding:20px;">
+                <h1>Error while saving batch</h1>
+                <p>{e!r}</p>
+                <a href="/transactions">Back to transactions</a>
+            </body>
+            </html>
+            """,
+            status_code=500,
+        )
+    finally:
+        db.close()
+
+    # On success: go to the main transactions page
+    return RedirectResponse(url="/transactions", status_code=303) 

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Review Imported Transactions</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='../static/css/upload_preview.css') }}">
+</head>
+<body>
+<div class="page-container">
+    <header class="page-header">
+        <div class="page-header-top">
+            <div>
+                <h1>Review imported transactions</h1>
+                <p class="page-subtitle">
+                    Final check before saving to your database. You can go back if something is wrong.
+                </p>
+            </div>
+        </div>
+    </header>
+
+    <div class="table-wrapper">
+        <table class="transactions-table">
+            <thead>
+            <tr>
+                <th>Temp ID</th>
+                <th>Date</th>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Original amount</th>
+                <th>Amount (€)</th>
+                <th>Category</th>
+                <th>Notes</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for tx in transactions %}
+                <tr>
+                    <td>{{ tx.temp_id }}</td>
+                    <td>{{ tx.date }}</td>
+                    <td>{{ tx.account_name }}</td>
+                    <td>{{ tx.description }}</td>
+                    <td>
+                        {% if tx.amount_original is not none %}
+                            {{ tx.amount_original }} {{ tx.currency_original or "" }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if tx.amount_eur is not none %}
+                            {{ tx.amount_eur }} €
+                        {% else %}
+                            --
+                        {% endif %}
+                    </td>
+                    <td>{{ tx.category or "" }}</td>
+                    <td>{{ tx.notes or "" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="page-actions" style="margin-top: 16px;">
+        <!-- Back just uses browser history -->
+        <button class="btn-secondary" type="button" onclick="history.back()">
+            ⟵ Back
+        </button>
+
+        <!-- Save to DB -->
+        <form method="post" action="/upload/save-batch" style="display:inline-block;">
+            <input type="hidden" name="batch_id" value="{{ batch_id }}">
+            <button class="btn-primary" type="submit">
+                Save to database
+            </button>
+        </form>
+    </div>
+</div>
+</body>
+</html>
