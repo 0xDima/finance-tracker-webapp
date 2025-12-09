@@ -1,145 +1,41 @@
-# main.py
+# routes_upload.py
 """
-Main FastAPI app for the personal finance tracker.
-
-Current features:
-- View all transactions from the database
-- Add a test transaction (for debugging)
-- Upload CSV bank statements
-- Preview imported transactions with inline editing
-- Review cleaned transactions
-- Save a batch of transactions to the database
+Routes for the CSV upload → preview → review → save flow.
 """
 
 import os
-import re
 import uuid
-from datetime import date
 from typing import List, Any, Dict
 
-from fastapi import FastAPI, Request, Depends, UploadFile, File, Form
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import (
+    APIRouter,
+    Request,
+    Depends,
+    UploadFile,
+    File,
+    Form,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
-
 from sqlalchemy.orm import Session
 
-from db import Base, engine, SessionLocal
 from models import Transaction
-from services.csv_import import parse_csvs
-from services.import_helpers import build_transaction_from_dict
+from app.services.csv_import import parse_csvs
+from app.services.import_helpers import build_transaction_from_dict
+from app.deps import (
+    templates,
+    get_db,
+    PENDING_BATCHES,
+    TRANSACTION_KEY_RE,
+)
+
+router = APIRouter()
 
 
 # -------------------------------------------------------------------
-# Global in-memory storage for upload batches
+# Step 0 – show upload page
 # -------------------------------------------------------------------
 
-# Structure:
-# PENDING_BATCHES[batch_id] = {
-#     "files": [...],         # list of file paths on disk
-#     "transactions": {...},  # temp_id -> tx dict (from CSV parsing)
-#     "order": [...],         # list of temp_ids to preserve table order
-#     "banks": [...],         # bank names (parallel to csv_files)
-#     "final": [...],         # list of cleaned tx dicts (after /upload/review)
-# }
-PENDING_BATCHES: Dict[str, Dict[str, Any]] = {}
-
-
-# -------------------------------------------------------------------
-# Database & app setup
-# -------------------------------------------------------------------
-
-# Create database tables (only if they don't exist yet)
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI(title="Finance Tracker")
-
-# Static files (CSS/JS) are served from the "static" folder at /static/...
-# Make sure your folder structure has "static/" at the project root.
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Jinja2 templates are loaded from the "templates" folder at the project root.
-templates = Jinja2Templates(directory="templates")
-
-
-def get_db():
-    """
-    Dependency that provides a database session and ensures it's closed.
-
-    Usage (in routes):
-        db: Session = Depends(get_db)
-    """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# -------------------------------------------------------------------
-# Basic routes
-# -------------------------------------------------------------------
-
-@app.get("/")
-def read_root():
-    """
-    Simple health check / landing endpoint.
-    """
-    return {"message": "My finance app is running"}
-
-
-@app.get("/transactions", response_class=HTMLResponse)
-def transactions_page(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """
-    Show all transactions stored in the database.
-    """
-    transactions = (
-        db.query(Transaction)
-        .order_by(Transaction.date.desc())
-        .all()
-    )
-
-    return templates.TemplateResponse(
-        "transactions.html",
-        {
-            "request": request,
-            "transactions": transactions,
-        },
-    )
-
-
-@app.post("/add-test-transaction")
-def add_test_transaction(db: Session = Depends(get_db)):
-    """
-    Debug endpoint: insert one hard-coded test transaction into the DB.
-    Useful to test that DB + models + /transactions page are working.
-    """
-    test_tx = Transaction(
-        date=date.today(),
-        description="Test transaction",
-        currency_original="EUR",
-        amount_original=-10.0,
-        amount_eur=-10.0,
-        account_name="Test Account",
-        category=None,
-        notes=None,
-    )
-
-    db.add(test_tx)
-    db.commit()
-    db.refresh(test_tx)
-
-    return {"message": "Test transaction added", "id": test_tx.id}
-
-
-# -------------------------------------------------------------------
-# Upload flow: step 0 – show upload page
-# -------------------------------------------------------------------
-
-@app.get("/upload", response_class=HTMLResponse)
+@router.get("/upload", response_class=HTMLResponse)
 def upload_page(request: Request):
     """
     Render the CSV upload page.
@@ -156,10 +52,10 @@ def upload_page(request: Request):
 
 
 # -------------------------------------------------------------------
-# Upload flow: legacy JSON endpoint (keep as debug if you want)
+# Legacy JSON upload endpoint (optional, debug only)
 # -------------------------------------------------------------------
 
-@app.post("/upload")
+@router.post("/upload")
 async def upload_process(
     request: Request,
     csv_files: List[UploadFile] = File(...),
@@ -179,13 +75,11 @@ async def upload_process(
     """
     batch_id = str(uuid.uuid4())
 
-    # Folder: uploads/batch_<id>
     folder = f"uploads/batch_{batch_id}"
     os.makedirs(folder, exist_ok=True)
 
     saved_paths: List[str] = []
 
-    # Save each file to disk
     for file, bank in zip(csv_files, banks):
         file_location = os.path.join(folder, file.filename)
         saved_paths.append(file_location)
@@ -202,10 +96,8 @@ async def upload_process(
     }
     batch = PENDING_BATCHES[batch_id]
 
-    # Parse CSVs into normalized transactions
     parse_csvs(batch, batch_id, saved_paths, banks)
 
-    # Build list for JSON response
     tx_list = [batch["transactions"][tid] for tid in batch["order"]]
 
     return {
@@ -216,10 +108,10 @@ async def upload_process(
 
 
 # -------------------------------------------------------------------
-# Upload flow: step 1 – process CSV -> show editable preview
+# Step 1 – process CSV → show editable preview
 # -------------------------------------------------------------------
 
-@app.post("/upload/preview", response_class=HTMLResponse)
+@router.post("/upload/preview", response_class=HTMLResponse)
 async def upload_preview(
     request: Request,
     csv_files: List[UploadFile] = File(...),
@@ -233,21 +125,14 @@ async def upload_preview(
     - Parse them into normalized transaction dicts using parse_csvs
     - Store parsed data in PENDING_BATCHES[batch_id]
     - Render upload_preview.html with an editable table
-
-    The preview page:
-    - shows one row per transaction
-    - allows inline editing via JS
-    - uses hidden inputs so edited values are posted to /upload/review
     """
     batch_id = str(uuid.uuid4())
 
-    # Create batch folder on disk
     folder = f"uploads/batch_{batch_id}"
     os.makedirs(folder, exist_ok=True)
 
     saved_paths: List[str] = []
 
-    # Save each uploaded CSV into the batch folder
     for file, bank in zip(csv_files, banks):
         file_location = os.path.join(folder, file.filename)
         saved_paths.append(file_location)
@@ -255,7 +140,6 @@ async def upload_preview(
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-    # Initialize batch entry in memory
     PENDING_BATCHES[batch_id] = {
         "files": saved_paths,
         "transactions": {},
@@ -264,17 +148,14 @@ async def upload_preview(
     }
     batch = PENDING_BATCHES[batch_id]
 
-    # Parse CSVs and fill the batch["transactions"] + batch["order"]
     parse_csvs(batch, batch_id, saved_paths, banks)
 
-    # Build a list of transactions including temp_id for the template
     transactions_for_template: List[Dict[str, Any]] = []
     for temp_id in batch["order"]:
         tx_data = batch["transactions"][temp_id].copy()
         tx_data["temp_id"] = temp_id
         transactions_for_template.append(tx_data)
 
-    # Render preview page
     return templates.TemplateResponse(
         "upload_preview.html",
         {
@@ -286,16 +167,10 @@ async def upload_preview(
 
 
 # -------------------------------------------------------------------
-# Upload flow: step 2 – read edited form -> show read-only review
+# Step 2 – read edited form → show read-only review
 # -------------------------------------------------------------------
 
-# Regex to match keys like: transactions[t_123][amount_eur]
-TRANSACTION_KEY_RE = re.compile(
-    r"^transactions\[(?P<temp_id>.+?)\]\[(?P<field>.+?)\]$"
-)
-
-
-@app.post("/upload/review", response_class=HTMLResponse)
+@router.post("/upload/review", response_class=HTMLResponse)
 async def upload_review(request: Request):
     """
     Step 2 of the main flow:
@@ -317,13 +192,11 @@ async def upload_review(request: Request):
     batch_id = form.get("batch_id")
     delete_ids: List[str] = form.getlist("delete_ids")
 
-    # raw_tx: { "t1": { "date": "...", "category": "...", ... }, ... }
     raw_tx: Dict[str, Dict[str, Any]] = {}
 
     for key, value in form.items():
         match = TRANSACTION_KEY_RE.match(key)
         if not match:
-            # Ignore keys like batch_id, delete_ids, etc.
             continue
 
         temp_id = match.group("temp_id")
@@ -334,12 +207,10 @@ async def upload_review(request: Request):
 
         raw_tx[temp_id][field] = value
 
-    # Build cleaned list, skipping deleted rows
     cleaned: List[Dict[str, Any]] = []
 
     for temp_id, tx_data in raw_tx.items():
         if temp_id in delete_ids:
-            # Row was marked for deletion (checkbox checked) -> skip
             continue
 
         tx: Dict[str, Any] = {
@@ -352,13 +223,11 @@ async def upload_review(request: Request):
             "notes": tx_data.get("notes") or "",
         }
 
-        # amount_original
         try:
             tx["amount_original"] = float(tx_data.get("amount_original"))
         except Exception:
             tx["amount_original"] = None
 
-        # amount_eur
         raw_eur = tx_data.get("amount_eur")
         if raw_eur in (None, "", "None"):
             tx["amount_eur"] = None
@@ -370,13 +239,11 @@ async def upload_review(request: Request):
 
         cleaned.append(tx)
 
-    # Store cleaned list in PENDING_BATCHES so /upload/save-batch can use it
     if batch_id:
         if batch_id not in PENDING_BATCHES:
             PENDING_BATCHES[batch_id] = {}
         PENDING_BATCHES[batch_id]["final"] = cleaned
 
-    # Show read-only review table
     return templates.TemplateResponse(
         "upload_review.html",
         {
@@ -388,11 +255,14 @@ async def upload_review(request: Request):
 
 
 # -------------------------------------------------------------------
-# Upload flow: step 3 – save cleaned batch into the DB
+# Step 3 – save cleaned batch into the DB
 # -------------------------------------------------------------------
 
-@app.post("/upload/save-batch")
-async def save_batch(batch_id: str = Form(...)):
+@router.post("/upload/save-batch")
+async def save_batch(
+    batch_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
     """
     Step 3 of the main flow:
 
@@ -402,8 +272,8 @@ async def save_batch(batch_id: str = Form(...)):
     - Take cleaned tx dicts from PENDING_BATCHES[batch_id]["final"]
     - Convert each dict into a Transaction ORM object (build_transaction_from_dict)
     - Insert them into the database in one transaction
-    - Optionally clean up the batch from memory
-    - Redirect to /transactions (or show a success page)
+    - Clean up the batch from memory
+    - Redirect to /transactions
     """
 
     batch = PENDING_BATCHES.get(batch_id)
@@ -416,16 +286,14 @@ async def save_batch(batch_id: str = Form(...)):
 
     print(f"\n[save-batch] Preparing to insert {len(final)} transactions for batch_id={batch_id!r}")
 
-    db = SessionLocal()
     try:
         orm_objects: List[Transaction] = []
 
         for i, tx_dict in enumerate(final, start=1):
             try:
-                t = build_transaction_from_dict(tx_dict)
-                orm_objects.append(t)
-                # Debug log
-                print(f"  [#{i}] {t.date} | {t.description} | {t.amount_eur} EUR | {t.category}")
+                tx_obj = build_transaction_from_dict(tx_dict)
+                orm_objects.append(tx_obj)
+                print(f"  [#{i}] {tx_obj.date} | {tx_obj.description} | {tx_obj.amount_eur} EUR | {tx_obj.category}")
             except Exception as e:
                 print(f"[save-batch] ERROR converting tx_dict #{i}: {e!r}")
                 print("  Raw dict:", tx_dict)
@@ -434,12 +302,10 @@ async def save_batch(batch_id: str = Form(...)):
             print("[save-batch] No valid transactions to insert.")
             return RedirectResponse(url="/transactions", status_code=303)
 
-        # Insert all at once
         db.add_all(orm_objects)
         db.commit()
         print(f"[save-batch] Successfully inserted {len(orm_objects)} transactions for batch {batch_id!r}")
 
-        # Clean up from memory
         PENDING_BATCHES.pop(batch_id, None)
 
     except Exception as e:
@@ -457,8 +323,5 @@ async def save_batch(batch_id: str = Form(...)):
             """,
             status_code=500,
         )
-    finally:
-        db.close()
 
-    # On success: go to the main transactions page
     return RedirectResponse(url="/transactions", status_code=303)

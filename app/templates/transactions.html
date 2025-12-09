@@ -13,6 +13,60 @@
         <header class="page-header">
             <h1>Transactions</h1>
         </header>
+        
+        
+        
+<form method="get" class="filter-bar" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+    <label for="month">Month:</label>
+    <input
+        type="month"
+        id="month"
+        name="month"
+        value="{{ current_month }}"
+        style="padding: 4px;"
+    >
+
+    <label for="search">Search:</label>
+    <input
+        type="text"
+        id="search"
+        name="search"
+        placeholder="Description or notes"
+        value="{{ search }}"
+        style="padding: 4px; min-width: 200px;"
+    >
+
+    <label for="category">Category:</label>
+    <select
+        id="category"
+        name="category"
+        multiple
+        size="4"
+        style="padding: 4px; min-width: 160px;"
+    >
+        {% for cat in all_categories %}
+            <option value="{{ cat }}"
+                {% if cat in selected_categories %}selected{% endif %}
+            >
+                {{ cat }}
+            </option>
+        {% endfor %}
+    </select>
+
+    <button type="submit" style="padding: 4px 12px;">
+        Apply
+    </button>
+
+    <a href="/transactions" style="margin-left: 8px; font-size: 14px;">
+        Reset
+    </a>
+</form>
+
+
+
+
+
+
 
         <div class="table-wrapper">
             <table class="transactions-table">
