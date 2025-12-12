@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy import func, case
 
 from models import Transaction
 from app.deps import get_db, templates
@@ -19,26 +20,42 @@ from app.services.import_helpers import get_month_range
 router = APIRouter()
 
 
+    # Convert amount filters safely
+def parse_optional_float(value: str) -> float | None:
+    value = value.strip()
+    if value == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+
+
+
 @router.get("/transactions", response_class=HTMLResponse)
 def transactions_page(
     request: Request,
-    month: str | None = Query(None),  
-    search: str | None = Query(None), 
-    category: List[str] = Query(default=[]), 
+    month: str | None = Query(None),
+    search: str | None = Query(None),
+    category: List[str] = Query(default=[]),
+    account: List[str] = Query(default=[]),
+    min_amount: str = Query(""),
+    max_amount: str = Query(""),
+    sort: str = Query("date"),
+    dir: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
-    
     start_date, end_date_exclusive, normalized_month = get_month_range(month)
 
-    query = (
-        db.query(Transaction)
-        .filter(
-            Transaction.date >= start_date,
-            Transaction.date < end_date_exclusive,
-        )
-        .order_by(Transaction.date.desc())
+    # Base query (NO order_by here)
+    query = db.query(Transaction).filter(
+        Transaction.date >= start_date,
+        Transaction.date < end_date_exclusive,
     )
 
+    # Search
     if search:
         pattern = f"%{search}%"
         query = query.filter(
@@ -46,19 +63,75 @@ def transactions_page(
                 Transaction.description.ilike(pattern),
                 Transaction.notes.ilike(pattern),
             )
-        )    
+        )
 
-    if category:  # list is non-empty
-        query = query.filter(Transaction.category.in_(category))
+    # Category filter (supports "None")
+    if category:
+        cat_conditions = []
+        for cat in category:
+            if cat == "None":
+                cat_conditions.append(Transaction.category.is_(None))
+            else:
+                cat_conditions.append(Transaction.category == cat)
+        query = query.filter(or_(*cat_conditions))
 
+    # Categories for dropdown (includes None)
     all_categories_rows = (
         db.query(Transaction.category)
-        .filter(Transaction.category.isnot(None))
         .distinct()
-        .order_by(Transaction.category)
+        .order_by(Transaction.category.is_(None), Transaction.category)
         .all()
     )
-    all_categories = [row[0] for row in all_categories_rows]
+    all_categories = [row[0] if row[0] is not None else "None" for row in all_categories_rows]
+
+    # Account filter (supports "None")
+    if account:
+        acc_conditions = []
+        for acc in account:
+            if acc == "None":
+                acc_conditions.append(Transaction.account_name.is_(None))
+            else:
+                acc_conditions.append(Transaction.account_name == acc)
+        query = query.filter(or_(*acc_conditions))
+
+    # Accounts for dropdown (includes None)
+    all_accounts_rows = (
+        db.query(Transaction.account_name)
+        .distinct()
+        .order_by(Transaction.account_name.is_(None), Transaction.account_name)
+        .all()
+    )
+    all_accounts = [row[0] if row[0] is not None else "None" for row in all_accounts_rows]
+
+    # Amount parsing + filters
+    min_amount_val = parse_optional_float(min_amount)
+    max_amount_val = parse_optional_float(max_amount)
+
+    if min_amount_val is not None:
+        query = query.filter(Transaction.amount_eur >= min_amount_val)
+
+    if max_amount_val is not None:
+        query = query.filter(Transaction.amount_eur <= max_amount_val)
+
+    # Totals for filtered view (before sorting/pagination)
+    income_sum, expense_sum, net_sum = db.query(
+        func.coalesce(func.sum(case((Transaction.amount_eur > 0, Transaction.amount_eur), else_=0.0)), 0.0),
+        func.coalesce(func.sum(case((Transaction.amount_eur < 0, Transaction.amount_eur), else_=0.0)), 0.0),
+        func.coalesce(func.sum(Transaction.amount_eur), 0.0),
+    ).select_from(Transaction).filter(*query._where_criteria).one()
+
+    # Sorting (single order_by applied once)
+    sort_key = sort if sort in {"date", "amount"} else "date"
+    sort_dir = dir if dir in {"asc", "desc"} else "desc"
+    sort_col = Transaction.amount_eur if sort_key == "amount" else Transaction.date
+    query = query.order_by(sort_col.asc() if sort_dir == "asc" else sort_col.desc())
+
+    def build_sort_url(column: str):
+        next_dir = "asc" if (sort_key == column and sort_dir == "desc") else "desc"
+        params = dict(request.query_params)
+        params["sort"] = column
+        params["dir"] = next_dir
+        return "/transactions?" + "&".join(f"{k}={v}" for k, v in params.items())
 
     transactions = query.all()
 
@@ -70,7 +143,18 @@ def transactions_page(
             "current_month": normalized_month,
             "search": search or "",
             "all_categories": all_categories,
-            "selected_categories": category,   # <-- NEW
+            "selected_categories": category,
+            "all_accounts": all_accounts,
+            "selected_accounts": account,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+            "income_sum": float(income_sum),
+            "expense_sum": float(expense_sum),
+            "net_sum": float(net_sum),
+            "sort": sort_key,
+            "dir": sort_dir,
+            "date_sort_url": build_sort_url("date"),
+            "amount_sort_url": build_sort_url("amount"),    
         },
     )
 
