@@ -1,137 +1,321 @@
 <!-- app/templates/transactions.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Transactions</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='../static/css/transactions.css') }}">
+
+    <link rel="stylesheet" href="{{ url_for('static', path='css/transactions.css') }}">
+
+    <!-- Optional (enhancement): Flatpickr for a proper date-range calendar -->
+    <!-- If you prefer NOT to use a CDN, remove these two lines and the page will still work via native date inputs. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
 <body>
-    <div class="page-container">
-        <header class="page-header">
+{% set qp = request.query_params %}
+
+<div class="page-container">
+    <!-- Header -->
+    <header class="page-header">
+        <div class="header-left">
             <h1>Transactions</h1>
-        </header>
+            <p class="header-subtitle">Filter, sort, and review your cashflow.</p>
+        </div>
+    </header>
 
-        <form method="get" class="filter-bar" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-            <label for="month">Month:</label>
-            <input
-                type="month"
-                id="month"
-                name="month"
-                value="{{ current_month }}"
-                style="padding: 4px;"
-            >
+    <!-- Filters -->
+    <!-- ✅ IMPORTANT: explicit action prevents query param duplication on GET submits -->
+    <form method="get" action="/transactions" class="filters" aria-label="Transaction filters">
+        <div class="filters-row">
+            <!-- Date range (enhanced) -->
+            <section class="filter-block" aria-label="Date range filter">
+                <div class="filter-label-row">
+                    <label class="filter-label" for="date_range">Date range</label>
 
-            <label for="search">Search:</label>
-            <input
-                type="text"
-                id="search"
-                name="search"
-                placeholder="Description or notes"
-                value="{{ search }}"
-                style="padding: 4px; min-width: 200px;"
-            >
+                    <!-- Quick presets (JS-enhanced; still fine without JS) -->
+                    <div class="presets" role="group" aria-label="Date presets">
+                        <button type="button" class="preset-btn" data-preset="this-month">This month</button>
+                        <button type="button" class="preset-btn" data-preset="last-30">Last 30 days</button>
+                        <button type="button" class="preset-btn" data-preset="this-year">This year</button>
+                    </div>
+                </div>
 
-            <label for="category">Category:</label>
-            <select
-                id="category"
-                name="category"
-                multiple
-                size="4"
-                style="padding: 4px; min-width: 160px;"
-            >
-                {% for cat in all_categories %}
-                    <option value="{{ cat }}" {% if cat in selected_categories %}selected{% endif %}>
-                        {{ cat }}
-                    </option>
-                {% endfor %}
-            </select>
+                <!-- One “pretty” input (JS will turn this into a range picker) -->
+                <input
+                    type="text"
+                    id="date_range"
+                    class="text-input"
+                    placeholder="Select date range"
+                    autocomplete="off"
+                    inputmode="none"
+                    aria-describedby="date_range_help"
+                />
 
-            <label for="account">Account:</label>
-            <select
-                id="account"
-                name="account"
-                multiple
-                size="4"
-                style="padding: 4px; min-width: 160px;"
-            >
-                {% for acc in all_accounts %}
-                    <option value="{{ acc }}" {% if acc in selected_accounts %}selected{% endif %}>
-                        {{ acc }}
-                    </option>
-                {% endfor %}
-            </select>
+                <!-- These are the actual query params your backend reads -->
+                <div class="date-fallback" data-date-fallback>
+                    <div class="date-grid">
+                        <div class="date-field">
+                            <label class="mini-label" for="start_date">Start</label>
+                            <input
+                                type="date"
+                                id="start_date"
+                                name="start_date"
+                                value="{{ qp.get('start_date', '') }}"
+                                class="text-input"
+                            />
+                        </div>
+                        <div class="date-field">
+                            <label class="mini-label" for="end_date">End</label>
+                            <input
+                                type="date"
+                                id="end_date"
+                                name="end_date"
+                                value="{{ qp.get('end_date', '') }}"
+                                class="text-input"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-            <label for="min_amount">Min €:</label>
-            <input
-                type="number"
-                step="0.01"
-                id="min_amount"
-                name="min_amount"
-                value="{{ min_amount }}"
-                style="padding: 4px; width: 100px;"
-            >
+            <!-- Search -->
+            <section class="filter-block" aria-label="Search filter">
+                <label class="filter-label" for="search">Search</label>
+                <input
+                    type="text"
+                    id="search"
+                    name="search"
+                    class="text-input"
+                    placeholder="Description or notes"
+                    value="{{ qp.get('search', '') }}"
+                />
+            </section>
 
-            <label for="max_amount">Max €:</label>
-            <input
-                type="number"
-                step="0.01"
-                id="max_amount"
-                name="max_amount"
-                value="{{ max_amount }}"
-                style="padding: 4px; width: 100px;"
-            >
+            <!-- Category multiselect -->
+            <section class="filter-block" aria-label="Category filter">
+                <label class="filter-label" for="category_search">Category</label>
 
-            <button type="submit" style="padding: 4px 12px;">
-                Apply
-            </button>
-
-            <a href="/transactions" style="margin-left: 8px; font-size: 14px;">
-                Reset
-            </a>
-        </form>
-
-        {% set qp = request.query_params %}
-
-        <div class="table-wrapper">
-            <table class="transactions-table">
-                <thead>
-                    <tr>
-                        <th>
-                            <a href="{{ date_sort_url }}">
-                                Date {% if sort == 'date' %}({{ dir }}){% endif %}
-                            </a>
-                        </th>
-
-                        <th>
-                            <a href="{{ amount_sort_url }}">
-                                Amount (€) {% if sort == 'amount' %}({{ dir }}){% endif %}
-                            </a>
-                        </th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {% for tx in transactions %}
-                    <tr class="main-row">
-                        <td>{{ tx.date }}</td>
-                        <td>{{ tx.description }}</td>
-                        <td>{{ tx.category }}</td>
-                        <td class="amount-cell">
-                            {% if tx.amount_eur < 0 %}
-                                <span class="amount amount-negative">{{ tx.amount_eur }} €</span>
+                <details class="multi-select" data-multiselect="category">
+                    <summary class="multi-summary" aria-controls="category_panel">
+                        <span class="multi-summary-title">Select categories</span>
+                        <span class="multi-summary-meta" aria-hidden="true" data-multi-meta="category">
+                            {% if selected_categories and selected_categories|length > 0 %}
+                                {{ selected_categories|length }} selected
                             {% else %}
-                                <span class="amount amount-positive">+{{ tx.amount_eur }} €</span>
+                                Any
                             {% endif %}
-                        </td>
-                    </tr>
+                        </span>
+                    </summary>
 
-                    <tr class="details-row">
-                        <td colspan="4">
+                    <div class="multi-panel" id="category_panel" role="group" aria-label="Category selection">
+                        <div class="multi-top">
+                            <input
+                                type="text"
+                                id="category_search"
+                                class="text-input"
+                                placeholder="Search categories..."
+                                autocomplete="off"
+                                data-multi-search
+                            />
+                        </div>
+
+                        {% if selected_categories and selected_categories|length > 0 %}
+                            <div class="chips" aria-label="Selected categories">
+                                {% for c in selected_categories %}
+                                    <button type="button" class="chip" data-chip-value="{{ c }}" data-chip-for="category">
+                                        {{ c }} <span class="chip-x" aria-hidden="true">×</span>
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        <div class="multi-list" role="listbox" aria-label="Category options">
+                            {% for cat in all_categories %}
+                                <label class="check-row" data-multi-item>
+                                    <input
+                                        type="checkbox"
+                                        name="category"
+                                        value="{{ cat }}"
+                                        {% if cat in selected_categories %}checked{% endif %}
+                                    />
+                                    <span class="check-text">{{ cat }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+
+                        <div class="multi-footer" aria-label="Category actions">
+                            <button type="button" class="btn btn-ghost btn-small" data-clear-group="category">Clear</button>
+                            <button type="submit" class="btn btn-primary btn-small">Apply</button>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- Account multiselect (with None allowed) -->
+            <section class="filter-block" aria-label="Account filter">
+                <label class="filter-label" for="account_search">Account</label>
+
+                <details class="multi-select" data-multiselect="account">
+                    <summary class="multi-summary" aria-controls="account_panel">
+                        <span class="multi-summary-title">Select accounts</span>
+                        <span class="multi-summary-meta" aria-hidden="true" data-multi-meta="account">
+                            {% if selected_accounts and selected_accounts|length > 0 %}
+                                {{ selected_accounts|length }} selected
+                            {% else %}
+                                Any
+                            {% endif %}
+                        </span>
+                    </summary>
+
+                    <div class="multi-panel" id="account_panel" role="group" aria-label="Account selection">
+                        <div class="multi-top">
+                            <input
+                                type="text"
+                                id="account_search"
+                                class="text-input"
+                                placeholder="Search accounts..."
+                                autocomplete="off"
+                                data-multi-search
+                            />
+                        </div>
+
+                        {% if selected_accounts and selected_accounts|length > 0 %}
+                            <div class="chips" aria-label="Selected accounts">
+                                {% for a in selected_accounts %}
+                                    <button type="button" class="chip" data-chip-value="{{ a }}" data-chip-for="account">
+                                        {{ a }} <span class="chip-x" aria-hidden="true">×</span>
+                                    </button>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        <div class="multi-list" role="listbox" aria-label="Account options">
+                            {% for acc in all_accounts %}
+                                <label class="check-row" data-multi-item>
+                                    <input
+                                        type="checkbox"
+                                        name="account"
+                                        value="{{ acc }}"
+                                        {% if acc in selected_accounts %}checked{% endif %}
+                                    />
+                                    <span class="check-text">{{ acc }}</span>
+                                </label>
+                            {% endfor %}
+
+                            {% if "None" not in all_accounts %}
+                                <label class="check-row" data-multi-item>
+                                    <input
+                                        type="checkbox"
+                                        name="account"
+                                        value="None"
+                                        {% if "None" in selected_accounts %}checked{% endif %}
+                                    />
+                                    <span class="check-text">None</span>
+                                </label>
+                            {% endif %}
+                        </div>
+
+                        <div class="multi-footer" aria-label="Account actions">
+                            <button type="button" class="btn btn-ghost btn-small" data-clear-group="account">Clear</button>
+                            <button type="submit" class="btn btn-primary btn-small">Apply</button>
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- Amount range -->
+            <section class="filter-block" aria-label="Amount range filter">
+                <label class="filter-label">Amount (EUR)</label>
+
+                <div class="amount-grid">
+                    <div class="money-field">
+                        <label class="mini-label" for="min_amount">Min</label>
+                        <div class="money-input">
+                            <span class="money-prefix" aria-hidden="true">€</span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                inputmode="decimal"
+                                id="min_amount"
+                                name="min_amount"
+                                class="text-input"
+                                value="{{ qp.get('min_amount', '') }}"
+                                placeholder="0.00"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="money-field">
+                        <label class="mini-label" for="max_amount">Max</label>
+                        <div class="money-input">
+                            <span class="money-prefix" aria-hidden="true">€</span>
+                            <input
+                                type="number"
+                                step="0.01"
+                                inputmode="decimal"
+                                id="max_amount"
+                                name="max_amount"
+                                class="text-input"
+                                value="{{ qp.get('max_amount', '') }}"
+                                placeholder="0.00"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Actions -->
+            <section class="filter-actions" aria-label="Filter actions">
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <a href="/transactions" class="btn btn-ghost">Reset</a>
+            </section>
+        </div>
+    </form>
+
+    <!-- Table -->
+    <div class="table-wrapper" role="region" aria-label="Transactions table">
+        <table class="transactions-table">
+            <thead>
+                <tr>
+                    <th class="col-date">
+                        <a class="sort-link" href="{{ date_sort_url }}">
+                            Date
+                            {% if sort == 'date' %}
+                                <span class="sort-indicator" aria-label="Sorted {{ dir }}">{{ "↑" if dir == "asc" else "↓" }}</span>
+                            {% endif %}
+                        </a>
+                    </th>
+                    <th class="col-desc">Description</th>
+                    <th class="col-cat">Category</th>
+                    <th class="col-amt">
+                        <a class="sort-link sort-right" href="{{ amount_sort_url }}">
+                            Amount
+                            {% if sort == 'amount' %}
+                                <span class="sort-indicator" aria-label="Sorted {{ dir }}">{{ "↑" if dir == "asc" else "↓" }}</span>
+                            {% endif %}
+                        </a>
+                    </th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for tx in transactions %}
+                <tr class="row">
+                    <td class="date-cell">{{ tx.date }}</td>
+
+                    <td class="desc-cell">
+                        <div class="desc-top">
+                            <span class="desc-text">{{ tx.description }}</span>
+                        </div>
+
+                        <details class="row-details">
+                            <summary class="row-details-summary">
+                                Details <span class="chev" aria-hidden="true">▾</span>
+                            </summary>
                             <div class="details-card">
                                 <div class="details-card-header">
-                                    <span class="details-label">Transaction details (TxID: {{ tx.id }})</span>
+                                    <span class="details-label">TxID: {{ tx.id }}</span>
                                     <span class="details-amount-pill {% if tx.amount_eur < 0 %}details-amount-negative{% else %}details-amount-positive{% endif %}">
                                         {% if tx.amount_eur < 0 %}
                                             {{ tx.amount_eur }} €
@@ -146,28 +330,53 @@
                                     <li><span>Date:</span> {{ tx.date }}</li>
                                     <li><span>Description:</span> {{ tx.description }}</li>
                                     <li><span>Category:</span> {{ tx.category }}</li>
-                                    <li><span>Original amount:</span> {{ tx.amount_original }} {{ tx.currency_original }}</li>
-                                    <li><span>Amount in EUR:</span> {{ tx.amount_eur }} €</li>
+                                    <li><span>Original:</span> {{ tx.amount_original }} {{ tx.currency_original }}</li>
+                                    <li><span>EUR:</span> {{ tx.amount_eur }} €</li>
                                 </ul>
                             </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
+                        </details>
+                    </td>
 
-                <tfoot>
-                    <tr>
-                        <td colspan="4">
-                            <div style="margin-top: 12px; padding: 12px; border-top: 1px solid #e5e7eb; display: flex; gap: 24px; flex-wrap: wrap;">
-                                <div><strong>Income:</strong> €{{ "%.2f"|format(income_sum) }}</div>
-                                <div><strong>Expenses:</strong> €{{ "%.2f"|format(expense_sum) }}</div>
-                                <div><strong>Net:</strong> €{{ "%.2f"|format(net_sum) }}</div>
-                            </div>
-                        </td>
-                    </tr>
-                </tfoot>
-            </table>
+                    <td class="cat-cell">
+                        <span class="pill">{{ tx.category }}</span>
+                    </td>
+
+                    <td class="amount-cell">
+                        {% if tx.amount_eur < 0 %}
+                            <span class="amount amount-negative">{{ tx.amount_eur }} €</span>
+                        {% else %}
+                            <span class="amount amount-positive">+{{ tx.amount_eur }} €</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Summary under the table -->
+    <div class="table-summary" role="region" aria-label="Summary">
+        <div class="table-summary-item">
+            <span class="table-summary-label">Income</span>
+            <span class="table-summary-value summary-positive">€{{ "%.2f"|format(income_sum) }}</span>
+        </div>
+        <div class="table-summary-divider" aria-hidden="true"></div>
+        <div class="table-summary-item">
+            <span class="table-summary-label">Expenses</span>
+            <span class="table-summary-value summary-negative">€{{ "%.2f"|format(expense_sum) }}</span>
+        </div>
+        <div class="table-summary-divider" aria-hidden="true"></div>
+        <div class="table-summary-item">
+            <span class="table-summary-label">Net</span>
+            <span class="table-summary-value">€{{ "%.2f"|format(net_sum) }}</span>
         </div>
     </div>
+</div>
+
+<!-- Optional (enhancement): Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<!-- Lightweight page enhancements (no framework) -->
+<script src="{{ url_for('static', path='js/transactions.js') }}" defer></script>
 </body>
 </html>

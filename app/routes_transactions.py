@@ -3,7 +3,7 @@
 Routes related to transactions list and simple debug helpers.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Request, Depends, Query
@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy import func, case
+from urllib.parse import urlencode
 
 from models import Transaction
 from app.deps import get_db, templates
@@ -20,7 +21,7 @@ from app.services.import_helpers import get_month_range
 router = APIRouter()
 
 
-    # Convert amount filters safely
+# Convert amount filters safely
 def parse_optional_float(value: str) -> float | None:
     value = value.strip()
     if value == "":
@@ -31,6 +32,14 @@ def parse_optional_float(value: str) -> float | None:
         return None
 
 
+def parse_optional_date(s: str | None) -> date | None:
+    if not s:
+        return None
+    s = s.strip()
+    if not s:
+        return None
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
 
 
 
@@ -38,6 +47,8 @@ def parse_optional_float(value: str) -> float | None:
 def transactions_page(
     request: Request,
     month: str | None = Query(None),
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
     search: str | None = Query(None),
     category: List[str] = Query(default=[]),
     account: List[str] = Query(default=[]),
@@ -47,12 +58,20 @@ def transactions_page(
     dir: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
-    start_date, end_date_exclusive, normalized_month = get_month_range(month)
+
+    if start_date and end_date:
+        range_start = start_date
+        range_end_exclusive = end_date + timedelta(days=1)
+        normalized_month = None
+    elif month:
+        range_start, range_end_exclusive, normalized_month = get_month_range(month)
+    else:
+        range_start, range_end_exclusive, normalized_month = get_month_range(None)
 
     # Base query (NO order_by here)
     query = db.query(Transaction).filter(
-        Transaction.date >= start_date,
-        Transaction.date < end_date_exclusive,
+        Transaction.date >= range_start,
+        Transaction.date < range_end_exclusive,
     )
 
     # Search
@@ -126,12 +145,21 @@ def transactions_page(
     sort_col = Transaction.amount_eur if sort_key == "amount" else Transaction.date
     query = query.order_by(sort_col.asc() if sort_dir == "asc" else sort_col.desc())
 
-    def build_sort_url(column: str):
+    def build_sort_url(column: str) -> str:
         next_dir = "asc" if (sort_key == column and sort_dir == "desc") else "desc"
-        params = dict(request.query_params)
-        params["sort"] = column
-        params["dir"] = next_dir
-        return "/transactions?" + "&".join(f"{k}={v}" for k, v in params.items())
+
+        # ✅ Keep ALL existing params, including repeated ones (category/account)
+        items = list(request.query_params.multi_items())
+
+        # Remove old sort/dir if present (could exist multiple times)
+        items = [(k, v) for (k, v) in items if k not in ("sort", "dir")]
+
+        # Add new sort/dir
+        items.append(("sort", column))
+        items.append(("dir", next_dir))
+
+        # ✅ Properly URL-encode + keep repeated params
+        return "/transactions?" + urlencode(items, doseq=True)
 
     transactions = query.all()
 
@@ -154,9 +182,13 @@ def transactions_page(
             "sort": sort_key,
             "dir": sort_dir,
             "date_sort_url": build_sort_url("date"),
-            "amount_sort_url": build_sort_url("amount"),    
+            "amount_sort_url": build_sort_url("amount"),
         },
     )
+
+
+
+
 
 
 @router.post("/add-test-transaction")
