@@ -1,9 +1,12 @@
-# Finance Tracker Webapp (v0.1)
+# Finance Tracker Webapp (v0.2)
 
-Personal finance web application built with **FastAPI** + **SQLite**.
+Personal finance web application built with **FastAPI** + **SQLite**, focused on
+transaction importing, normalization, and manual analysis.
 
-This version is an early checkpoint (v0.1) focused on the CSV import pipeline.  
-Core “analytics” / dashboard functionality is planned but not implemented yet.
+This version (v0.2) moves beyond the initial CSV import pipeline and introduces
+a usable transactions page with filtering, improved UI structure, and clearer
+backend separation. Dashboard analytics are partially prepared and will be
+expanded in future versions.
 
 ---
 
@@ -14,22 +17,32 @@ Core “analytics” / dashboard functionality is planned but not implemented ye
 - Uvicorn
 - SQLAlchemy + SQLite
 - Jinja2 templates
-- Vanilla JavaScript + HTML + CSS
+- Vanilla JavaScript, HTML, CSS
 
 ---
 
-## Current Features (v0.1)
+## Current Features (v0.2)
 
-- Basic FastAPI project structure (`app/` package)
-- SQLite database with a single `Transaction` table
-- `/transactions` page that lists all saved transactions
-- CSV upload flow:
-  1. **Upload CSVs** with selected bank
-  2. **Preview & edit** parsed transactions in an inline-editable table
-  3. **Review** final, read-only list of transactions
-  4. **Save batch** into the database
+### Dashboard (WIP)
+- `/dashboard` page is implemented (template + styles + JS)
+- UI structure is in place, but some backend/metrics are not fully implemented yet
+- Planned metrics include income/expenses/net + portfolio cards (crypto/stocks)
 
-Data is stored in `database/finance.db` (ignored by Git).
+### Transactions
+- `/transactions` page with:
+  - Date range filtering
+  - Category filtering
+  - Account filtering
+  - Clean, readable table layout
+- Clickable transactions with full stored details
+- Test/debug endpoints for inserting diverse transactions
+
+### CSV Import Pipeline
+- Upload multiple CSV files with bank selection
+- Parse and normalize data (currency → EUR)
+- Preview parsed transactions in an editable table
+- Review final, read-only transaction list
+- Save validated batches into the database
 
 ---
 
@@ -38,23 +51,22 @@ Data is stored in `database/finance.db` (ignored by Git).
 ```text
 FINANCE-TRACKER-WEBAPP/
 ├── app/
-│   ├── main.py               # FastAPI app + routes
-│   ├── models.py             # SQLAlchemy models (Transaction)
-│   ├── db.py                 # DB engine + SessionLocal + Base
 │   ├── services/
-│   │   ├── csv_import.py     # CSV parsing & normalization
-│   │   └── import_helpers.py # dict -> Transaction helpers
+│   │   ├── csv_import.py
+│   │   └── import_helpers.py
 │   ├── static/
-│   │   ├── css/              # styles for pages
-│   │   └── js/               # upload & preview JS
-│   └── templates/
-│       ├── upload.html
-│       ├── upload_preview.html
-│       ├── upload_review.html
-│       └── transactions.html
+│   │   ├── css/
+│   │   └── js/
+│   ├── templates/
+│   ├── routes_dashboard.py
+│   ├── routes_transactions.py
+│   ├── routes_upload.py
+│   ├── routes_root.py
+│   ├── db.py
+│   ├── models.py
+│   └── main.py
 ├── database/
-│   └── finance.db            # local SQLite DB (gitignored)
-├── notes/                    # personal notes (optional)
+│   └── finance.db   # gitignored
+├── uploads/
 ├── requirements.txt
-├── .gitignore
 └── README.md
