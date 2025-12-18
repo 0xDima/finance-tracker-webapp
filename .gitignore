@@ -23,6 +23,7 @@ database/finance.db
 uploads/
 notes/*
 *.csv
+data-migration/
 
 # Uvicorn / logs
 *.log
