@@ -1,245 +1,191 @@
-<!-- dashboard.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Finance Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <link rel="stylesheet" href="../static/css/dashboard.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css" />
 </head>
-<body class="dashboard-body">
-<div class="page-shell">
+<body>
+  <div class="app" id="app">
     <header class="topbar">
-        <div class="topbar-left">
-            <span class="topbar-eyebrow">Overview</span>
-            <h1 class="topbar-title">Dashboard</h1>
-            <p class="topbar-subtitle">Overview of your finances</p>
+      <div class="topbar__left">
+        <div class="topbar__title">Dashboard</div>
+        <div class="topbar__subtitle">{{ month_label }}</div>
+      </div>
+
+      <div class="topbar__center" aria-label="Primary navigation">
+        <a class="navbtn {% if request and request.url.path.startswith('/upload') %}navbtn--active{% endif %}"
+           href="/upload">
+          Upload
+        </a>
+        <a class="navbtn {% if request and request.url.path.startswith('/transactions') %}navbtn--active{% endif %}"
+           href="/transactions">
+          Transactions
+        </a>
+      </div>
+
+      <div class="topbar__right">
+        <div class="pill pill--status {% if previous_month_imported %}pill--ok{% else %}pill--bad{% endif %}">
+          <span class="pill__dot" aria-hidden="true"></span>
+          <span class="pill__statusText">
+            {% if previous_month_imported %}
+              {{ month_label }} data is imported
+            {% else %}
+              {{ month_label }} data is not imported
+            {% endif %}
+          </span>
         </div>
-        <div class="topbar-right">
-            <div class="pill pill--ghost">
-                <span class="pill-label">Today</span>
-                <span class="pill-value" id="today-date">—</span>
-            </div>
-            <div class="pill pill--success">
-                <span class="pill-dot"></span>
-                <span class="pill-text">Previous month imported</span>
-            </div>
+
+        <div class="pill" aria-label="Net">
+          <span class="pill__label">Net</span>
+          <span class="pill__value">
+            {% if net_eur >= 0 %}+{% endif %}{{ "%.2f"|format(net_eur) }} €
+          </span>
         </div>
+      </div>
     </header>
 
-    <main class="layout-main">
-        <!-- Block 1: Monthly summary + pie chart -->
-        <section class="layout-row layout-row--primary js-fade">
-            <section class="panel panel--summary">
-                <header class="panel-header">
-                    <h2 class="panel-title">Monthly summary</h2>
-                    <p class="panel-subtitle">Snapshot of income, expenses and net for this month.</p>
-                </header>
+    <main class="content">
+      <section class="hero">
+        <div class="hero__chart card">
+          <div class="card__head">
+            <div class="card__title">Spending by Category</div>
+            <div class="card__meta">Click a category to open Transactions</div>
+          </div>
 
-                <div class="summary-grid">
-                    <article class="summary-item">
-                        <div class="summary-label">Income</div>
-                        <div class="summary-value summary-value--positive">+1,800 €</div>
-                        <div class="summary-meta">Salary · Side projects</div>
-                    </article>
-
-                    <article class="summary-item">
-                        <div class="summary-label">Expenses</div>
-                        <div class="summary-value summary-value--negative">−1,320 €</div>
-                        <div class="summary-meta">Living · Subscriptions</div>
-                    </article>
-
-                    <article class="summary-item">
-                        <div class="summary-label">Net</div>
-                        <div class="summary-value summary-value--neutral">+480 €</div>
-                        <div class="summary-meta">After all expenses</div>
-                    </article>
-                </div>
-            </section>
-
-            <section class="panel panel--chart">
-                <header class="panel-header panel-header--compact">
-                    <h2 class="panel-title">Cash flow</h2>
-                    <p class="panel-subtitle">Income vs expenses vs net</p>
-                </header>
-
-                <div class="chart-shell">
-                    <div class="chart-canvas-wrap">
-                        <canvas id="cashflow-chart"
-                                width="260"
-                                height="260"
-                                aria-label="Monthly cash flow donut chart"></canvas>
-                        <div class="chart-center">
-                            <div class="chart-center-value">+480 €</div>
-                            <div class="chart-center-label">Net this month</div>
-                        </div>
-                    </div>
-
-                    <div class="chart-legend">
-                        <div class="legend-row">
-                            <span class="legend-dot legend-dot--income"></span>
-                            <div class="legend-text">
-                                <span class="legend-label">Income</span>
-                                <span class="legend-meta">1,800 €</span>
-                            </div>
-                        </div>
-                        <div class="legend-row">
-                            <span class="legend-dot legend-dot--expenses"></span>
-                            <div class="legend-text">
-                                <span class="legend-label">Expenses</span>
-                                <span class="legend-meta">1,320 €</span>
-                            </div>
-                        </div>
-                        <div class="legend-row">
-                            <span class="legend-dot legend-dot--net"></span>
-                            <div class="legend-text">
-                                <span class="legend-label">Net</span>
-                                <span class="legend-meta">480 €</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </section>
-
-        <!-- Block 2: Investments -->
-        <section class="layout-row js-fade">
-            <header class="panel-header panel-header--row">
-                <div>
-                    <h2 class="panel-title">Investments</h2>
-                    <p class="panel-subtitle">Calm overview of your stock and crypto portfolios.</p>
-                </div>
-            </header>
-
-            <div class="investments-grid">
-                <article class="portfolio-card">
-                    <div class="portfolio-header">
-                        <span class="portfolio-label">Stocks portfolio</span>
-                        <span class="portfolio-tag portfolio-tag--positive">+2.4% today</span>
-                    </div>
-                    <div class="portfolio-value">5,430 €</div>
-                    <p class="portfolio-note">Long-term positions · 9 holdings</p>
-                </article>
-
-                <article class="portfolio-card">
-                    <div class="portfolio-header">
-                        <span class="portfolio-label">Crypto portfolio</span>
-                        <span class="portfolio-tag portfolio-tag--negative">−1.1% today</span>
-                    </div>
-                    <div class="portfolio-value">1,240 €</div>
-                    <p class="portfolio-note">Spot holdings · 4 assets</p>
-                </article>
+          <div class="donut">
+            <div class="donut__canvas">
+              <canvas id="spendingByCategoryChart" width="320" height="320" aria-label="Spending by category donut chart" role="img"></canvas>
+              <div class="donut__center" aria-label="Total spent">
+                <div class="donut__centerLabel">Total</div>
+                <div class="donut__centerValue">−{{ "%.2f"|format(total_spent_eur) }} €</div>
+              </div>
             </div>
-        </section>
 
-        <!-- Block 3: Recent transactions -->
-        <section class="layout-row js-fade">
-            <section class="panel panel--table">
-                <header class="panel-header panel-header--row">
-                    <div>
-                        <h2 class="panel-title">Recent transactions</h2>
-                        <p class="panel-subtitle">Last 10 transactions across all accounts.</p>
-                    </div>
-                    <button class="link-button" id="toggle-transactions" type="button" data-state="collapsed">
-                        Show all
-                    </button>
-                </header>
+            <div class="donut__legendWrap">
+              <div class="legend" id="categoryLegend" aria-label="Category legend"></div>
+            </div>
+          </div>
+        </div>
 
-                <div class="table-shell" id="transactions-shell">
-                    <table class="tx-table">
-                        <thead>
-                        <tr>
-                            <th class="tx-col-date">Date</th>
-                            <th class="tx-col-account">Account</th>
-                            <th class="tx-col-desc">Description</th>
-                            <th class="tx-col-category">Category</th>
-                            <th class="tx-col-amount">Amount</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        <tr>
-                            <td>03 Dec</td>
-                            <td>Main checking</td>
-                            <td>Coffee &amp; croissant</td>
-                            <td>Food &amp; drink</td>
-                            <td class="tx-amount tx-amount--negative">−3.80 €</td>
-                        </tr>
-                        <tr>
-                            <td>02 Dec</td>
-                            <td>Main checking</td>
-                            <td>Groceries</td>
-                            <td>Groceries</td>
-                            <td class="tx-amount tx-amount--negative">−42.10 €</td>
-                        </tr>
-                        <tr>
-                            <td>01 Dec</td>
-                            <td>Brokerage</td>
-                            <td>Stock dividend</td>
-                            <td>Investments</td>
-                            <td class="tx-amount tx-amount--positive">+18.25 €</td>
-                        </tr>
-                        <tr>
-                            <td>30 Nov</td>
-                            <td>Crypto wallet</td>
-                            <td>USDT deposit</td>
-                            <td>Crypto</td>
-                            <td class="tx-amount tx-amount--positive">+120.00 €</td>
-                        </tr>
-                        <tr>
-                            <td>29 Nov</td>
-                            <td>Main checking</td>
-                            <td>Rent</td>
-                            <td>Housing</td>
-                            <td class="tx-amount tx-amount--negative">−400.00 €</td>
-                        </tr>
-                        <tr>
-                            <td>28 Nov</td>
-                            <td>Main checking</td>
-                            <td>Gym membership</td>
-                            <td>Health</td>
-                            <td class="tx-amount tx-amount--negative">−29.99 €</td>
-                        </tr>
-                        <tr>
-                            <td>27 Nov</td>
-                            <td>Brokerage</td>
-                            <td>ETF purchase</td>
-                            <td>Investments</td>
-                            <td class="tx-amount tx-amount--negative">−150.00 €</td>
-                        </tr>
-                        <tr>
-                            <td>26 Nov</td>
-                            <td>Crypto wallet</td>
-                            <td>BTC purchase</td>
-                            <td>Crypto</td>
-                            <td class="tx-amount tx-amount--negative">−80.00 €</td>
-                        </tr>
-                        <tr>
-                            <td>25 Nov</td>
-                            <td>Main checking</td>
-                            <td>Salary</td>
-                            <td>Income</td>
-                            <td class="tx-amount tx-amount--positive">+1,100.00 €</td>
-                        </tr>
-                        <tr>
-                            <td>24 Nov</td>
-                            <td>Savings</td>
-                            <td>Transfer to savings</td>
-                            <td>Savings</td>
-                            <td class="tx-amount tx-amount--negative">−150.00 €</td>
-                        </tr>
-                        </tbody>
-                    </table>
+        <div class="hero__summary">
+          <div class="summaryGrid">
+            <div class="metric card metric--income">
+              <div class="metric__label">Income</div>
+              <div class="metric__value">+{{ "%.2f"|format(income_eur) }} €</div>
+              <div class="metric__hint">This month</div>
+            </div>
+
+            <div class="metric card metric--expenses">
+              <div class="metric__label">Expenses</div>
+              <div class="metric__value">{{ "%.2f"|format(expenses_eur) }} €</div>
+              <div class="metric__hint">This month</div>
+            </div>
+
+            <div class="metric card metric--net">
+              <div class="metric__label">Net</div>
+              <div class="metric__value">
+                {% if net_eur >= 0 %}+{% endif %}{{ "%.2f"|format(net_eur) }} €
+              </div>
+              <div class="metric__hint">{{ month_label }}</div>
+            </div>
+
+            <div class="investmentsRow">
+              <div class="card investment">
+                <div class="card__head">
+                  <div class="card__title">Investments</div>
+                  <div class="card__meta">Snapshot</div>
                 </div>
+                <div class="investment__grid">
+                  <div class="investment__item" role="group" aria-label="Stocks card">
+                    <div class="investment__kicker">Stocks</div>
+                    <div class="investment__value">—</div>
+                    <div class="investment__sub">Positions • Performance</div>
+                  </div>
+                  <div class="investment__item" role="group" aria-label="Crypto card">
+                    <div class="investment__kicker">Crypto</div>
+                    <div class="investment__value">—</div>
+                    <div class="investment__sub">Holdings • Volatility</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                <p class="table-hint">
-                    Showing a preview of your latest activity. For full filtering and search, use the Transactions page.
-                </p>
-            </section>
-        </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="lower">
+        <div class="card tableCard">
+          <div class="card__head tableCard__head">
+            <div>
+              <div class="card__title">Top 10 Biggest Transactions</div>
+              <div class="card__meta">By absolute amount • {{ month_label }}</div>
+            </div>
+
+            <a class="btn btn--ghost"
+               href="/transactions?start_date={{ month_start_iso }}&end_date={{ next_month_start_iso }}">
+              See all monthly transactions
+            </a>
+          </div>
+
+          <div class="tableCard__body">
+            <div class="tableWrap" role="region" aria-label="Monthly transactions table">
+              <table class="txTable">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Account</th>
+                    <th>Category</th>
+                    <th class="num">Amount (EUR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if recent_transactions and recent_transactions|length > 0 %}
+                    {% for tx in recent_transactions %}
+                      <tr>
+                        <td>{{ tx.date.strftime("%b %d") }}</td>
+                        <td>{{ tx.description or "—" }}</td>
+                        <td>{{ tx.account_name or "—" }}</td>
+                        <td>{{ tx.category or "Uncategorized" }}</td>
+                        <td class="num">
+                          {% if tx.amount_eur is not none %}
+                            {% if tx.amount_eur >= 0 %}+{% endif %}{{ "%.2f"|format(tx.amount_eur) }}
+                          {% else %}
+                            —
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="5" style="color: rgba(255,255,255,.62); padding: 14px 12px;">
+                        No transactions found for this month.
+                      </td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="tableHint">Tip: click a category in the legend above to jump to filtered Transactions.</div>
+          </div>
+        </div>
+      </section>
     </main>
-</div>
 
-<script src="../static/js/dashboard.js"></script>
+    <script id="spending-by-category-data" type="application/json">
+      {{ spending_by_category | tojson }}
+    </script>
+
+    <script id="month-range-data" type="application/json">
+      {{ {"start_date": month_start_iso, "end_date": next_month_start_iso} | tojson }}
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+  </div>
 </body>
 </html>

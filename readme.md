@@ -44,6 +44,21 @@ expanded in future versions.
 - Review final, read-only transaction list
 - Save validated batches into the database
 
+### Data Migration
+
+Transaction data is collected from multiple monthly Excel files.
+Since the data comes from different sources, it often contains inconsistent
+date formats, headers, and numeric values.
+
+To handle this, a simple data migration pipeline was created:
+- data was explored and cleaned in a Jupyter notebook,
+- all monthly files were normalized to the same schema,
+- dates and amounts were fixed and validated,
+- the cleaned data is imported into SQLite using a standalone script.
+
+This provides a clean starting point for analytics and future development.
+
+
 ---
 
 ## Project Structure

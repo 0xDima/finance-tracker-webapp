@@ -40,12 +40,22 @@ def build_transaction_from_dict(tx: dict) -> Transaction:
 
 
 
+from datetime import date
+
 def get_month_range(month_str: str | None):
     """
     month_str: 'YYYY-MM' or None.
     Returns (start_date, end_date_exclusive, normalized_month_str).
-    If month_str is None or invalid, uses current month.
+    If month_str is None or invalid, uses PREVIOUS month.
     """
+
+    def previous_month_from_today():
+        today = date.today()
+        if today.month == 1:
+            return today.year - 1, 12
+        return today.year, today.month - 1
+
+    # 1) pick year/month
     if month_str:
         try:
             year_str, month_only_str = month_str.split("-")
@@ -54,14 +64,13 @@ def get_month_range(month_str: str | None):
             if not (1 <= month <= 12):
                 raise ValueError
         except Exception:
-            today = date.today()
-            year, month = today.year, today.month
+            year, month = previous_month_from_today()
     else:
-        today = date.today()
-        year, month = today.year, today.month
+        # 👇 DEFAULT: previous month
+        year, month = previous_month_from_today()
 
+    # 2) compute start and first day of next month
     start_date = date(year, month, 1)
-
     if month == 12:
         end_date_exclusive = date(year + 1, 1, 1)
     else:

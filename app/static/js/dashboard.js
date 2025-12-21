@@ -1,157 +1,158 @@
-// dashboard.js
+(function () {
+  function readJsonTag(id, fallback) {
+    try {
+      const el = document.getElementById(id);
+      if (!el) return fallback;
+      const raw = (el.textContent || "").trim();
+      if (!raw) return fallback;
+      return JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  }
 
-document.addEventListener("DOMContentLoaded", () => {
-    setTodayDate();
-    initFadeIn();
-    initTransactionsToggle();
-    drawCashflowChart();
-});
+  const monthRange = readJsonTag('month-range-data', { start_date: null, end_date: null });
+  const rawData = readJsonTag('spending-by-category-data', []);
 
-function setTodayDate() {
-    const el = document.getElementById("today-date");
-    if (!el) return;
+  function normLabel(s) {
+    return String(s || '').trim().replace(/\s+/g, ' ');
+  }
 
-    const now = new Date();
-    const formatted = now.toLocaleDateString(undefined, {
-        weekday: "short",
-        day: "2-digit",
-        month: "short",
-        year: "numeric"
-    });
+  const totals = {};
+  for (const item of rawData) {
+    if (!item) continue;
+    const label = normLabel(item.label);
+    const value = Number(item.value);
+    if (!label) continue;
+    if (!Number.isFinite(value) || value < 0) continue;
+    totals[label] = (totals[label] || 0) + value;
+  }
 
-    el.textContent = formatted;
-}
+  const labels = Object.keys(totals).sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
+  const values = labels.map(l => totals[l] || 0);
 
-function initFadeIn() {
-    const sections = Array.from(document.querySelectorAll(".js-fade"));
-    sections.forEach((section, index) => {
-        setTimeout(() => {
-            section.classList.add("is-visible");
-        }, 140 + index * 160);
-    });
-}
+  const colors = [
+    "#9bbcff", "#b6f0d2", "#ffd6a5", "#f1b5ff",
+    "#ff9ea6", "#a6fff4", "#ffe98a", "#c7d2ff",
+    "#d0ffb6", "#ffb7e0", "#cbd5e1", "#fca5a5"
+  ];
 
-function initTransactionsToggle() {
-    const shell = document.getElementById("transactions-shell");
-    const toggle = document.getElementById("toggle-transactions");
-    if (!shell || !toggle) return;
+  function goToTransactions(category) {
+    const start = monthRange?.start_date;
+    const end = monthRange?.end_date;
 
-    const rows = Array.from(shell.querySelectorAll("tbody tr"));
-    const maxVisible = 5;
+    const url = new URL('/transactions', window.location.origin);
+    if (category) url.searchParams.set('category', category);
+    if (start) url.searchParams.set('start_date', start);
+    if (end) url.searchParams.set('end_date', end);
 
-    // initial collapsed state: show first 5
-    rows.forEach((row, index) => {
-        if (index >= maxVisible) {
-            row.classList.add("is-hidden");
-        }
-    });
+    window.location.href = url.toString();
+  }
 
-    // lock initial height for smooth first animation
-    const initialHeight = shell.getBoundingClientRect().height;
-    shell.style.height = initialHeight + "px";
-    requestAnimationFrame(() => {
-        shell.style.height = "";
-    });
+  function renderLegend() {
+    const legend = document.getElementById('categoryLegend');
+    if (!legend) return;
+    legend.innerHTML = '';
 
-    toggle.addEventListener("click", () => {
-        const isCollapsed = toggle.dataset.state !== "expanded";
-        animateTableHeight(shell, rows, maxVisible, isCollapsed);
-        toggle.dataset.state = isCollapsed ? "expanded" : "collapsed";
-        toggle.textContent = isCollapsed ? "Show less" : "Show all";
-    });
-}
-
-function animateTableHeight(shell, rows, maxVisible, expanding) {
-    const startHeight = shell.getBoundingClientRect().height;
-
-    if (expanding) {
-        rows.forEach(row => row.classList.remove("is-hidden"));
-    } else {
-        rows.forEach((row, index) => {
-            if (index >= maxVisible) row.classList.add("is-hidden");
-        });
+    if (labels.length === 0) {
+      const row = document.createElement('div');
+      row.className = 'legendItem';
+      row.innerHTML = `
+        <div class="legendLeft">
+          <span class="swatch" style="background: rgba(255,255,255,.18)"></span>
+          <span class="legendName">No expenses found</span>
+        </div>
+        <span class="legendValue">0.00</span>
+      `;
+      legend.appendChild(row);
+      return;
     }
 
-    const endHeight = shell.getBoundingClientRect().height;
+    labels.forEach((name, i) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'legendBtn';
+      btn.setAttribute('data-category', name);
+      btn.setAttribute('aria-label', `Open monthly transactions for ${name}`);
 
-    shell.style.height = startHeight + "px";
-    // force reflow
-    void shell.offsetHeight;
+      const left = document.createElement('div');
+      left.className = 'legendLeft';
 
-    shell.style.transition = "height 260ms ease";
-    shell.style.height = endHeight + "px";
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = colors[i % colors.length];
 
-    shell.addEventListener(
-        "transitionend",
-        () => {
-            shell.style.height = "";
-            shell.style.transition = "";
-        },
-        { once: true }
-    );
-}
+      const label = document.createElement('span');
+      label.className = 'legendName';
+      label.textContent = name;
 
-function drawCashflowChart() {
-    const canvas = document.getElementById("cashflow-chart");
-    if (!canvas || !canvas.getContext) return;
+      left.append(swatch, label);
 
-    const ctx = canvas.getContext("2d");
-    const dpr = window.devicePixelRatio || 1;
-    const logicalWidth = canvas.width;
-    const logicalHeight = canvas.height;
+      const value = document.createElement('span');
+      value.className = 'legendValue';
+      value.textContent = values[i].toFixed(2);
 
-    canvas.width = logicalWidth * dpr;
-    canvas.height = logicalHeight * dpr;
-    ctx.scale(dpr, dpr);
+      btn.append(left, value);
+      btn.addEventListener('click', () => goToTransactions(name));
 
-    const centerX = logicalWidth / 2;
-    const centerY = logicalHeight / 2;
-    const radius = Math.min(centerX, centerY) - 8;
-
-    const income = 1800;
-    const expenses = 1320;
-    const net = 480;
-
-    const segments = [
-        { label: "Income", value: income, color: "rgba(34,197,94,0.9)" },
-        { label: "Expenses", value: expenses, color: "rgba(248,113,113,0.95)" },
-        { label: "Net", value: net, color: "rgba(59,130,246,0.9)" }
-    ];
-
-    const total = segments.reduce((sum, s) => sum + s.value, 0);
-    if (total <= 0) return;
-
-    let startAngle = -Math.PI / 2;
-
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-
-    segments.forEach(segment => {
-        const sliceAngle = (segment.value / total) * Math.PI * 2;
-        const endAngle = startAngle + sliceAngle;
-
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.arc(centerX, centerY, radius, startAngle, endAngle);
-        ctx.closePath();
-        ctx.fillStyle = segment.color;
-        ctx.fill();
-
-        startAngle = endAngle;
+      legend.appendChild(btn);
     });
+  }
 
-    // Cut inner circle to create donut
-    const innerRadius = radius * 0.58;
-    ctx.save();
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, innerRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+  function buildChart() {
+    const canvas = document.getElementById('spendingByCategoryChart');
+    if (!canvas || typeof Chart === 'undefined') return;
 
-    // Fill inner area with panel background for softer look
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, innerRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-}
+    const existing = Chart.getChart(canvas);
+    if (existing) existing.destroy();
+
+    if (labels.length === 0) return;
+
+    new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: labels.map((_, i) => colors[i % colors.length]),
+          borderWidth: 0,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '72%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label(ctx) {
+                const v = Number(ctx.parsed);
+                return `${ctx.label}: ${Number.isFinite(v) ? v.toFixed(2) : "0.00"} €`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function fadeIn() {
+    const nodes = document.querySelectorAll('.card, .topbar');
+    nodes.forEach((n, idx) => {
+      n.classList.add('fade-in');
+      n.style.animationDelay = Math.min(idx * 40, 220) + 'ms';
+    });
+  }
+
+  renderLegend();
+  buildChart();
+  fadeIn();
+
+  let rAF = null;
+  window.addEventListener('resize', () => {
+    if (rAF) cancelAnimationFrame(rAF);
+    rAF = requestAnimationFrame(buildChart);
+  });
+})();
