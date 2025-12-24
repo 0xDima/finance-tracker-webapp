@@ -1,63 +1,97 @@
-<!-- upload.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Upload CSVs</title>
+    <title>Upload – Finance Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
     <link rel="stylesheet" href="{{ url_for('static', path='css/upload.css') }}">
 </head>
 <body>
-<main>
-    <!-- NEW: wrap everything in a form -->
-    <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload/preview">
-        <h1>Upload CSVs</h1>
-        <div class="subtitle">Import your bank statements as CSV files to review and categorize transactions.</div>
-
-        <!-- Drag & drop area -->
-        <label class="upload-area" id="upload-area" for="file-input">
-            <div class="upload-icon">⬆︎</div>
-            <div>
-                <div class="upload-text-title">Drag & drop CSV files here</div>
-                <div class="upload-text-subtitle">or click to browse from your Mac</div>
+    <div class="page-container">
+        <!-- Sticky top bar -->
+        <header class="top-bar" id="top-bar">
+            <div class="top-bar-content">
+                <div class="top-bar-left">
+                    <h1 class="page-title">Upload</h1>
+                    <p class="page-subtitle">Import bank statements as CSV files</p>
+                </div>
+                <div class="top-bar-right">
+                    <a href="/dashboard" class="btn-secondary">← Dashboard</a>
+                </div>
             </div>
-        </label>
+        </header>
 
-        <!-- IMPORTANT: add name="csv_files" so FastAPI can see it -->
-        <input id="file-input" name="csv_files" type="file" accept=".csv,text/csv" multiple>
+        <main class="main-content">
+            <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload/preview">
+                
+                <!-- Upload card -->
+                <div class="card upload-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Select Files</h2>
+                        <p class="card-description">Upload up to 3 CSV files from your bank</p>
+                    </div>
 
-        <!-- Selected files list -->
-        <section class="file-list" id="file-list">
-            <div class="file-list-header" id="file-list-header" style="display: none;">
-                Selected files
-            </div>
-            <div id="file-rows"></div>
-        </section>
+                    <div class="card-body">
+                        <!-- Dropzone -->
+                        <div class="dropzone" id="upload-area">
+                            <div class="dropzone-icon">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                                </svg>
+                            </div>
+                            <div class="dropzone-text">
+                                <span class="dropzone-title">Drop CSV files here</span>
+                                <span class="dropzone-subtitle">or click to browse</span>
+                            </div>
+                        </div>
 
-        <!--  Continue button -->
-        <button type="submit" class="continue-button">
-            Continue
-        </button>
-    </form>
-</main>
+                        <input id="file-input" name="csv_files" type="file" accept=".csv,text/csv" multiple>
 
-<!-- Preview modal -->
-<div id="preview-modal" class="preview-modal" aria-hidden="true">
-    <div class="preview-dialog" role="dialog" aria-modal="true">
-        <div class="preview-header">
-            <div>
-                <div id="preview-title" class="preview-title"></div>
-                <div class="preview-subtitle">First lines of the CSV file (read-only preview).</div>
-            </div>
-            <button type="button" class="preview-close" id="preview-close">×</button>
-        </div>
-        <pre id="preview-content" class="preview-content"></pre>
+                        <!-- File list -->
+                        <div class="file-list-container" id="file-list-container">
+                            <div class="file-list-header" id="file-list-header">
+                                <span>Files</span>
+                                <span>Size</span>
+                                <span>Bank</span>
+                                <span></span>
+                            </div>
+                            <div id="file-rows" class="file-rows"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="actions-footer">
+                    <button type="submit" class="btn-primary" id="continue-btn">
+                        Continue to Preview
+                    </button>
+                </div>
+
+            </form>
+        </main>
     </div>
-</div>
 
-<!-- Jinja-friendly JS path -->
-<script src="{{ url_for('static', path='js/upload.js') }}"></script>
+    <!-- Preview modal -->
+    <div id="preview-modal" class="modal" aria-hidden="true">
+        <div class="modal-backdrop"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h3 id="preview-title" class="modal-title"></h3>
+                    <p class="modal-subtitle">First 40 lines (read-only preview)</p>
+                </div>
+                <button type="button" class="modal-close" id="preview-close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <pre id="preview-content" class="preview-content"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', path='js/upload.js') }}"></script>
 </body>
 </html>

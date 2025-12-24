@@ -1,9 +1,10 @@
-//upload.js
+// upload.js
 
 const uploadArea = document.getElementById("upload-area");
 const fileInput = document.getElementById("file-input");
 const fileRowsContainer = document.getElementById("file-rows");
-const fileListHeader = document.getElementById("file-list-header");
+const fileListContainer = document.getElementById("file-list-container");
+const topBar = document.getElementById("top-bar");
 
 const previewModal = document.getElementById("preview-modal");
 const previewContent = document.getElementById("preview-content");
@@ -12,14 +13,14 @@ const previewClose = document.getElementById("preview-close");
 
 let files = [];
 
+// Sync files array with input element
 function syncInputFiles() {
     const dt = new DataTransfer();
     files.forEach(f => dt.items.add(f));
     fileInput.files = dt.files;
 }
 
-
-
+// Format bytes
 function formatBytes(bytes) {
     if (!bytes && bytes !== 0) return "";
     const units = ["B", "KB", "MB", "GB"];
@@ -32,15 +33,16 @@ function formatBytes(bytes) {
     return `${value.toFixed(value < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
+// Render file list
 function renderFileList() {
     fileRowsContainer.innerHTML = "";
 
     if (!files.length) {
-        fileListHeader.style.display = "none";
+        fileListContainer.classList.remove("has-files");
         return;
     }
 
-    fileListHeader.style.display = "block";
+    fileListContainer.classList.add("has-files");
 
     files.forEach(file => {
         const row = document.createElement("div");
@@ -56,7 +58,7 @@ function renderFileList() {
 
         const bankSelect = document.createElement("select");
         bankSelect.className = "file-bank-select";
-        bankSelect.name = "banks"; // <-- this makes multiple values arrive as a list
+        bankSelect.name = "banks";
 
         ["Select bank", "Revolut", "Monobank", "Erste"].forEach(label => {
             const opt = document.createElement("option");
@@ -76,6 +78,7 @@ function renderFileList() {
     });
 }
 
+// Handle file selection
 function handleFiles(selectedFiles) {
     if (!selectedFiles || !selectedFiles.length) return;
 
@@ -94,15 +97,12 @@ function handleFiles(selectedFiles) {
     renderFileList();
 }
 
-/* --------- Preview modal ---------- */
-
+// Preview modal
 function openModal() {
-    previewModal.classList.add("is-open");
     previewModal.setAttribute("aria-hidden", "false");
 }
 
 function closeModal() {
-    previewModal.classList.remove("is-open");
     previewModal.setAttribute("aria-hidden", "true");
     previewContent.textContent = "";
     previewTitle.textContent = "";
@@ -125,18 +125,17 @@ function handlePreview(file) {
     reader.readAsText(file);
 }
 
-/* --------- Events ---------- */
-
-// Click -> open file picker
-uploadArea.addEventListener("click", () => fileInput.click());
-
-// Input change
-fileInput.addEventListener("change", e => {
-    handleFiles(e.target.files);
-    fileInput.value = "";
+// Events
+uploadArea.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInput.click();
 });
 
-// Drag & drop on upload area
+fileInput.addEventListener("change", e => {
+    handleFiles(e.target.files);
+});
+
 ["dragenter", "dragover"].forEach(eventName => {
     uploadArea.addEventListener(eventName, e => {
         e.preventDefault();
@@ -149,34 +148,32 @@ fileInput.addEventListener("change", e => {
     uploadArea.addEventListener(eventName, e => {
         e.preventDefault();
         e.stopPropagation();
-        if (eventName === "dragleave") {
-            uploadArea.classList.remove("dragover");
-        }
+        uploadArea.classList.remove("dragover");
     });
 });
 
 uploadArea.addEventListener("drop", e => {
+    e.preventDefault();
+    e.stopPropagation();
     const dt = e.dataTransfer;
     const droppedFiles = dt && dt.files;
     uploadArea.classList.remove("dragover");
     handleFiles(droppedFiles);
 });
 
-// Modal close
 previewClose.addEventListener("click", closeModal);
 
 previewModal.addEventListener("click", e => {
-    if (e.target === previewModal) {
+    if (e.target === previewModal || e.target.classList.contains("modal-backdrop")) {
         closeModal();
     }
 });
 
 document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && previewModal.classList.contains("is-open")) {
+    if (e.key === "Escape" && previewModal.getAttribute("aria-hidden") === "false") {
         closeModal();
     }
 });
-
 
 const uploadForm = document.getElementById("upload-form");
 
@@ -186,7 +183,17 @@ uploadForm.addEventListener("submit", e => {
         alert("Please add at least one CSV file before continuing.");
         return;
     }
-
-    // make sure input has the current files
     syncInputFiles();
 });
+
+// Sticky header shadow on scroll
+let lastScrollTop = 0;
+window.addEventListener("scroll", () => {
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    if (scrollTop > 10) {
+        topBar.classList.add("scrolled");
+    } else {
+        topBar.classList.remove("scrolled");
+    }
+    lastScrollTop = scrollTop;
+}, { passive: true });

@@ -1,112 +1,146 @@
 // upload_preview.js
+
 document.addEventListener("DOMContentLoaded", () => {
-    setupDeleteCheckboxes();
-    setupCategorySelects();
-    setupInlineEditing();
+    initHeaderScroll();
+    initTableScroll();
+    initDeleteCheckboxes();
+    initSelectAll();
+    initCategorySelects();
+    initInlineEditing();
+    initAddManualTransaction();
+    updateImportCount();
 });
 
-/**
- * Toggle visual strike-through on rows marked for delete.
- */
-function setupDeleteCheckboxes() {
-    document.querySelectorAll(".delete-checkbox").forEach((checkbox) => {
-        checkbox.addEventListener("change", () => {
-            const row = checkbox.closest("tr.main-row");
+function initHeaderScroll() {
+    const header = document.querySelector(".page-header");
+    if (!header) return;
+
+    window.addEventListener("scroll", () => {
+        if (window.scrollY > 10) header.classList.add("scrolled");
+        else header.classList.remove("scrolled");
+    });
+}
+
+function initTableScroll() {
+    const scroll = document.querySelector(".table-scroll");
+    if (!scroll) return;
+
+    scroll.addEventListener("scroll", () => {
+        if (scroll.scrollTop > 10) scroll.classList.add("scrolled-y");
+        else scroll.classList.remove("scrolled-y");
+    });
+}
+
+function initDeleteCheckboxes(root = document) {
+    root.querySelectorAll(".delete-checkbox").forEach((cb) => {
+        if (cb.dataset.bound === "1") return;
+        cb.dataset.bound = "1";
+
+        cb.addEventListener("change", () => {
+            const row = cb.closest("tr.tx-row");
             if (!row) return;
-            row.classList.toggle("row-marked-for-delete", checkbox.checked);
+            row.classList.toggle("deleted", cb.checked);
+            updateImportCount();
         });
     });
 }
 
-/**
- * Keep hidden category input in sync with category <select>.
- */
-function setupCategorySelects() {
-    document.querySelectorAll(".category-select").forEach((selectEl) => {
-        const tempId = selectEl.dataset.tempId;
+function initSelectAll() {
+    const selectAll = document.getElementById("select-all");
+    if (!selectAll) return;
+
+    selectAll.addEventListener("change", () => {
+        const checkboxes = document.querySelectorAll(".delete-checkbox");
+        checkboxes.forEach((cb) => {
+            cb.checked = selectAll.checked;
+            const row = cb.closest("tr.tx-row");
+            if (row) row.classList.toggle("deleted", cb.checked);
+        });
+        updateImportCount();
+    });
+}
+
+function updateImportCount() {
+    const total = document.querySelectorAll(".tx-row").length;
+    const deleted = document.querySelectorAll(".delete-checkbox:checked").length;
+    const count = total - deleted;
+    const el = document.getElementById("import-count");
+    if (el) el.textContent = count;
+}
+
+function initCategorySelects(root = document) {
+    root.querySelectorAll(".category-select").forEach((sel) => {
+        if (sel.dataset.bound === "1") return;
+        sel.dataset.bound = "1";
+
+        const tempId = sel.dataset.tempId;
         if (!tempId) return;
 
-        selectEl.addEventListener("change", () => {
+        sel.addEventListener("change", () => {
             const hidden = document.querySelector(
-                `input[name="transactions[${tempId}][category]"]`
+                `input[name="transactions[${cssEscape(tempId)}][category]"]`
             );
-            if (hidden) {
-                hidden.value = selectEl.value;
-            }
+            if (hidden) hidden.value = sel.value;
         });
     });
 }
 
-/**
- * Setup inline editing for cells with data-field (except category which uses select).
- * Double-click on a cell to edit.
- */
-function setupInlineEditing() {
-    document.querySelectorAll("tr.main-row").forEach((row) => {
-        const tempId = row.dataset.tempId;
-        if (!tempId) return;
+function initInlineEditing() {
+  const tbody = document.getElementById("tx-tbody");
+  if (!tbody) return;
 
-        row.querySelectorAll("td[data-field]").forEach((cell) => {
-            const field = cell.dataset.field;
-            if (!field) return;
-            if (field === "category") return; // handled by <select>
+  if (tbody.dataset.dblBound === "1") return;
+  tbody.dataset.dblBound = "1";
 
-            cell.addEventListener("dblclick", () => {
-                startEditingCell(cell, tempId, field);
-            });
-        });
-    });
+  tbody.addEventListener("dblclick", (e) => {
+    const cell = e.target.closest("td[data-field]");
+    if (!cell) return;
+
+    const row = cell.closest("tr.tx-row");
+    if (!row) return;
+
+    const tempId = row.dataset.tempId;
+    const field = cell.dataset.field;
+    if (!tempId || !field) return;
+
+    startEditingCell(cell, tempId, field);
+  });
 }
 
-/**
- * Helper to get hidden input for a transaction field.
- */
 function getHiddenInput(tempId, field) {
     return document.querySelector(
-        `input[name="transactions[${tempId}][${field}]"]`
+        `input[name="transactions[${cssEscape(tempId)}][${cssEscape(field)}]"]`
     );
 }
 
-/**
- * Start inline editing for a specific cell/field.
- */
 function startEditingCell(cell, tempId, field) {
     if (cell.classList.contains("editing")) return;
 
-    // Determine initial value for input from hidden inputs (source of truth)
     let initialValue = "";
 
     if (field === "amount_original") {
-        const amtInput = getHiddenInput(tempId, "amount_original");
-        if (amtInput) {
-            initialValue = amtInput.value || "";
-        }
+        // show combined: "<amount> <currency>"
+        const amtInp = getHiddenInput(tempId, "amount_original");
+        const curInp = getHiddenInput(tempId, "currency_original");
+        const a = amtInp ? (amtInp.value || "") : "";
+        const c = curInp ? (curInp.value || "") : "";
+        initialValue = (a && c) ? `${a} ${c}` : (a || c || "");
     } else if (field === "amount_eur") {
-        const amtEurInput = getHiddenInput(tempId, "amount_eur");
-        if (amtEurInput) {
-            initialValue = amtEurInput.value || "";
-        }
+        const inp = getHiddenInput(tempId, "amount_eur");
+        if (inp) initialValue = inp.value || "";
     } else if (field === "notes") {
-        const notesInput = getHiddenInput(tempId, "notes");
-        if (notesInput) {
-            initialValue = notesInput.value || "";
-        }
+        const inp = getHiddenInput(tempId, "notes");
+        if (inp) initialValue = inp.value || "";
     } else {
-        const hidden = getHiddenInput(tempId, field);
-        if (hidden) {
-            initialValue = hidden.value || "";
-        } else {
-            initialValue = cell.textContent.trim();
-        }
+        const inp = getHiddenInput(tempId, field);
+        initialValue = inp ? (inp.value || "") : cell.textContent.trim();
     }
 
-    // Create input
     const input = document.createElement("input");
     input.type = "text";
     input.className = "inline-input";
     input.value = initialValue;
 
-    // Replace cell content with input
     cell.innerHTML = "";
     cell.classList.add("editing");
     cell.appendChild(input);
@@ -117,61 +151,59 @@ function startEditingCell(cell, tempId, field) {
         const newVal = input.value.trim();
         cell.classList.remove("editing");
 
-        // Update hidden inputs based on field
         if (field === "amount_original") {
-            const amtInput = getHiddenInput(tempId, "amount_original");
-            if (amtInput) {
-                amtInput.value = newVal;
-            }
-            // currency_original is not edited inline; we keep it as-is
+            // accepts "123.45 USD" or just "123.45" (keeps currency) or just "USD" (keeps amount)
+            const amtInp = getHiddenInput(tempId, "amount_original");
+            const curInp = getHiddenInput(tempId, "currency_original");
+            const prevAmt = amtInp ? (amtInp.value || "") : "";
+            const prevCur = curInp ? (curInp.value || "") : "";
+
+            const parsed = parseAmountCurrency(newVal);
+            const nextAmt = (parsed.amount !== null) ? String(parsed.amount) : prevAmt;
+            const nextCur = (parsed.currency !== null) ? parsed.currency : prevCur;
+
+            if (amtInp) amtInp.value = nextAmt;
+            if (curInp) curInp.value = nextCur;
+
             updateAmountOriginalCell(cell, tempId);
         } else if (field === "amount_eur") {
-            const amtEurInput = getHiddenInput(tempId, "amount_eur");
-            if (amtEurInput) {
-                amtEurInput.value = newVal;
-            }
+            const inp = getHiddenInput(tempId, "amount_eur");
+            if (inp) inp.value = newVal;
             updateAmountEurCell(cell, tempId);
         } else if (field === "notes") {
-            const notesInput = getHiddenInput(tempId, "notes");
-            if (notesInput) {
-                notesInput.value = newVal;
-            }
+            const inp = getHiddenInput(tempId, "notes");
+            if (inp) inp.value = newVal;
             updateNotesCell(cell, newVal);
         } else {
-            const hidden = getHiddenInput(tempId, field);
-            if (hidden) {
-                hidden.value = newVal;
-            }
+            const inp = getHiddenInput(tempId, field);
+            if (inp) inp.value = newVal;
             cell.textContent = newVal;
         }
     };
 
     const cancelEdit = () => {
         cell.classList.remove("editing");
-        // Restore from hidden inputs
         if (field === "amount_original") {
             updateAmountOriginalCell(cell, tempId);
         } else if (field === "amount_eur") {
             updateAmountEurCell(cell, tempId);
         } else if (field === "notes") {
-            const notesInput = getHiddenInput(tempId, "notes");
-            const fullVal = notesInput ? notesInput.value || "" : "";
-            updateNotesCell(cell, fullVal);
+            const inp = getHiddenInput(tempId, "notes");
+            const val = inp ? inp.value || "" : "";
+            updateNotesCell(cell, val);
         } else {
-            const hidden = getHiddenInput(tempId, field);
-            const val = hidden ? hidden.value || "" : "";
+            const inp = getHiddenInput(tempId, field);
+            const val = inp ? inp.value || "" : "";
             cell.textContent = val;
         }
     };
 
-    input.addEventListener("blur", () => {
-        commitEdit();
-    });
+    input.addEventListener("blur", () => commitEdit());
 
     input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
-            input.blur(); // triggers commitEdit via blur
+            input.blur();
         } else if (e.key === "Escape") {
             e.preventDefault();
             cancelEdit();
@@ -179,30 +211,24 @@ function startEditingCell(cell, tempId, field) {
     });
 }
 
-/**
- * Re-render the Original amount cell from hidden amount_original + currency_original.
- */
 function updateAmountOriginalCell(cell, tempId) {
-    const amtInput = getHiddenInput(tempId, "amount_original");
-    const currInput = getHiddenInput(tempId, "currency_original");
+    const amtInp = getHiddenInput(tempId, "amount_original");
+    const currInp = getHiddenInput(tempId, "currency_original");
 
-    const amount = amtInput ? (amtInput.value || "") : "";
-    const currency = currInput ? (currInput.value || "") : "";
+    const amt = amtInp ? (amtInp.value || "") : "";
+    const curr = currInp ? (currInp.value || "") : "";
 
-    if (!amount && !currency) {
+    if (!amt && !curr) {
         cell.textContent = "";
         return;
     }
 
-    cell.textContent = currency ? `${amount} ${currency}` : amount;
+    cell.textContent = curr ? `${amt} ${curr}` : amt;
 }
 
-/**
- * Re-render the EUR amount cell with pill styling (+/-) from hidden amount_eur.
- */
 function updateAmountEurCell(cell, tempId) {
-    const amtInput = getHiddenInput(tempId, "amount_eur");
-    const raw = amtInput ? amtInput.value : null;
+    const inp = getHiddenInput(tempId, "amount_eur");
+    const raw = inp ? inp.value : null;
 
     cell.innerHTML = "";
 
@@ -210,35 +236,174 @@ function updateAmountEurCell(cell, tempId) {
     span.classList.add("amount");
 
     if (raw === null || raw === "" || raw === "None") {
-        span.textContent = "--";
+        span.textContent = "—";
         cell.appendChild(span);
         return;
     }
 
     const amt = parseFloat(raw);
     if (isNaN(amt)) {
-        span.textContent = "--";
+        span.textContent = "—";
         cell.appendChild(span);
         return;
     }
 
     if (amt < 0) {
-        span.classList.add("amount-negative");
+        span.classList.add("negative");
         span.textContent = `${amt} €`;
     } else {
-        span.classList.add("amount-positive");
+        span.classList.add("positive");
         span.textContent = `+${amt} €`;
     }
 
     cell.appendChild(span);
 }
 
-/**
- * Re-render notes cell with truncated value (but keep full in hidden input).
- */
 function updateNotesCell(cell, fullValue) {
     const full = fullValue || "";
-    const truncated =
-        full.length > 40 ? full.slice(0, 40) + "…" : full;
+    const truncated = full.length > 40 ? full.slice(0, 40) + "…" : full;
     cell.textContent = truncated;
+}
+
+/* -------------------- Manual add row -------------------- */
+
+function initAddManualTransaction() {
+    const btn = document.getElementById("add-manual-tx");
+    const tbody = document.getElementById("tx-tbody");
+    if (!btn || !tbody) return;
+
+    btn.addEventListener("click", () => {
+        const tempId = generateManualTempId();
+        const row = buildManualRow(tempId);
+        tbody.appendChild(row);
+
+        // bind behaviors for new row
+        initDeleteCheckboxes(row);
+        initCategorySelects(row);
+        initInlineEditing(row);
+        updateImportCount();
+
+        // scroll to bottom + focus date cell for quick edit
+        row.scrollIntoView({ behavior: "smooth", block: "end" });
+        const dateCell = row.querySelector('td[data-field="date"]');
+        if (dateCell) startEditingCell(dateCell, tempId, "date");
+    });
+}
+
+function buildManualRow(tempId) {
+    const tr = document.createElement("tr");
+    tr.className = "tx-row manual-row";
+    tr.dataset.tempId = tempId;
+
+    tr.innerHTML = `
+        <td class="cell-delete">
+            <input type="checkbox" class="delete-checkbox checkbox" name="delete_ids" value="${escapeHtml(tempId)}">
+        </td>
+        <td class="cell-temp-id"><span class="temp-id">${escapeHtml(tempId)}</span></td>
+        <td class="cell-date" data-field="date"></td>
+        <td class="cell-account" data-field="account_name"></td>
+        <td class="cell-description" data-field="description"></td>
+        <td class="cell-amount-orig" data-field="amount_original"></td>
+        <td class="cell-amount-eur" data-field="amount_eur"><span class="amount">—</span></td>
+        <td class="cell-category">
+            ${buildCategorySelectHtml(tempId)}
+        </td>
+        <td class="cell-notes" data-field="notes"></td>
+        <td class="hidden-inputs">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][date]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][account_name]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][description]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][amount_original]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][currency_original]" value="">
+            <input type="number" step="0.01" name="transactions[${escapeHtml(tempId)}][amount_eur]" value="" class="amount-eur-input">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][category]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(tempId)}][notes]" value="">
+        </td>
+    `;
+
+    // show subtle placeholders for manual rows
+    tr.querySelectorAll('td[data-field]').forEach(td => {
+        td.classList.add("manual-empty");
+        td.textContent = "";
+    });
+
+    // amount_original shows placeholder too
+    const ao = tr.querySelector('.cell-amount-orig');
+    if (ao) {
+        ao.classList.add("manual-empty");
+        ao.textContent = "";
+    }
+
+    return tr;
+}
+
+function buildCategorySelectHtml(tempId) {
+    // keep exact same options as template
+    return `
+      <select class="category-select" data-temp-id="${escapeHtml(tempId)}">
+        <option value="" selected>Uncategorized</option>
+        <option value="Groceries">Groceries</option>
+        <option value="Transportation">Transportation</option>
+        <option value="Coffee">Coffee</option>
+        <option value="Dining & Restaurants">Dining & Restaurants</option>
+        <option value="Shopping">Shopping</option>
+        <option value="Home">Home</option>
+        <option value="Cash Withdrawals">Cash Withdrawals</option>
+        <option value="Entertainment & Subscriptions">Entertainment & Subscriptions</option>
+        <option value="Travelling">Travelling</option>
+        <option value="Education & Studying">Education & Studying</option>
+        <option value="Other">Other</option>
+        <option value="Investments">Investments</option>
+        <option value="Income">Income</option>
+      </select>
+    `;
+}
+
+function generateManualTempId() {
+    // unique & form-safe
+    const t = Date.now().toString(36);
+    const r = Math.random().toString(36).slice(2, 7);
+    return `manual_${t}_${r}`;
+}
+
+function parseAmountCurrency(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return { amount: null, currency: null };
+
+    // try "amount currency"
+    const parts = s.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 1) {
+        // either amount or currency
+        const maybeAmt = normalizeNumber(parts[0]);
+        if (maybeAmt !== null) return { amount: maybeAmt, currency: null };
+        return { amount: null, currency: parts[0].toUpperCase() };
+    }
+
+    // prefer first token as amount, last as currency
+    const maybeAmt = normalizeNumber(parts[0]);
+    const cur = parts[parts.length - 1].toUpperCase();
+    return { amount: maybeAmt, currency: cur || null };
+}
+
+function normalizeNumber(s) {
+    const v = String(s || "").trim().replace(",", ".");
+    if (!v) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return n;
+}
+
+function cssEscape(v) {
+    // minimal safe escape for attribute selectors
+    return String(v).replace(/(["\\\]\[])/g, "\\$1");
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
