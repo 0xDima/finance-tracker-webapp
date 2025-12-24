@@ -74,13 +74,13 @@
             <div class="metric card metric--income">
               <div class="metric__label">Income</div>
               <div class="metric__value">+{{ "%.2f"|format(income_eur) }} €</div>
-              <div class="metric__hint">This month</div>
+              <div class="metric__hint">{{ month_label }}</div>
             </div>
 
             <div class="metric card metric--expenses">
               <div class="metric__label">Expenses</div>
               <div class="metric__value">{{ "%.2f"|format(expenses_eur) }} €</div>
-              <div class="metric__hint">This month</div>
+              <div class="metric__hint">{{ month_label }}</div>
             </div>
 
             <div class="metric card metric--net">
