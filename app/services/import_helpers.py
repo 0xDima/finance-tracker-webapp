@@ -1,8 +1,14 @@
-# import_helpers.py
+# app/services/import_helpers.py
+#
+# Import Helper Functions
+# Provides utility functions for converting parsed transaction dictionaries into ORM models
+# and calculating date ranges for monthly financial reports.
 
 from datetime import datetime, date
 from models import Transaction
 
+
+# ---- Transaction Conversion ----
 
 def build_transaction_from_dict(tx: dict) -> Transaction:
     """
@@ -38,9 +44,7 @@ def build_transaction_from_dict(tx: dict) -> Transaction:
     return t
 
 
-
-
-from datetime import date
+# ---- Date Range Utilities ----
 
 def get_month_range(month_str: str | None):
     """

@@ -1,28 +1,42 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.pdb
+*$py.class
 *.so
-
-# Virtualenv
+.Python
 venv/
-.env
-.env.*  
+env/
+ENV/
+.venv
 
-# OS
+# Database
+*.db
+*.sqlite
+*.sqlite3
+database/
+
+# Uploads
+uploads/
+app/uploads/
+
+# Development & Migration Data
+data-migration/
+notes/
+
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
 
-# IDE / Editor
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Local data
-database/finance.db
-uploads/
-notes/*
-*.csv
+# Environment
+.env
+.env.local
 
-# Uvicorn / logs
+# Logs
 *.log

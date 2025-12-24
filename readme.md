@@ -1,87 +1,133 @@
-# Finance Tracker Webapp (v0.2)
+# Finance Tracker Web App (v0.1)
 
-Personal finance web application built with **FastAPI** + **SQLite**, focused on
-transaction importing, normalization, and manual analysis.
-
-This version (v0.2) moves beyond the initial CSV import pipeline and introduces
-a usable transactions page with filtering, improved UI structure, and clearer
-backend separation. Dashboard analytics are partially prepared and will be
-expanded in future versions.
+Personal finance web application built for my own use.  
+It imports bank statements (CSV), lets me review/edit/categorize transactions before saving, stores everything in a local SQLite database, and provides a dashboard with monthly insights.
 
 ---
 
-## Tech Stack
+## What it does
 
-- Python 3.12
-- FastAPI
-- Uvicorn
-- SQLAlchemy + SQLite
-- Jinja2 templates
-- Vanilla JavaScript, HTML, CSS
+### CSV Import flow
+- Upload one or more CSV bank statements
+- Backend normalization & validation
+- Preview table with:
+  - inline editing
+  - category selection
+  - delete-before-import
+- Review page (read-only confirmation)
+- Save batch into SQLite via SQLAlchemy
 
----
+### Dashboard
+- Monthly summary (Income / Expenses / Net)
+- Spending by category chart (interactive)
+- Clickable category chips (redirect to filtered transactions)
+- “Previous month imported” indicator
+- Top 10 largest transactions (previous month)
+- Navigation buttons: **Upload** / **Transactions**
 
-## Current Features (v0.2)
-
-### Dashboard (WIP)
-- `/dashboard` page is implemented (template + styles + JS)
-- UI structure is in place, but some backend/metrics are not fully implemented yet
-- Planned metrics include income/expenses/net + portfolio cards (crypto/stocks)
-
-### Transactions
-- `/transactions` page with:
-  - Date range filtering
-  - Category filtering
-  - Account filtering
-  - Clean, readable table layout
-- Clickable transactions with full stored details
-- Test/debug endpoints for inserting diverse transactions
-
-### CSV Import Pipeline
-- Upload multiple CSV files with bank selection
-- Parse and normalize data (currency → EUR)
-- Preview parsed transactions in an editable table
-- Review final, read-only transaction list
-- Save validated batches into the database
-
-### Data Migration
-
-Transaction data is collected from multiple monthly Excel files.
-Since the data comes from different sources, it often contains inconsistent
-date formats, headers, and numeric values.
-
-To handle this, a simple data migration pipeline was created:
-- data was explored and cleaned in a Jupyter notebook,
-- all monthly files were normalized to the same schema,
-- dates and amounts were fixed and validated,
-- the cleaned data is imported into SQLite using a standalone script.
-
-This provides a clean starting point for analytics and future development.
-
+### Transactions page
+- Loads transactions from SQLite
+- Advanced filtering:
+  - date range
+  - category
+  - account
+  - min/max amount
+  - text search
 
 ---
 
-## Project Structure
+## Who it’s for
+This project is intentionally built **for personal use only**.  
+There is no authentication, no multi-user logic, and no hosted deployment target (yet).
 
-```text
-FINANCE-TRACKER-WEBAPP/
-├── app/
-│   ├── services/
-│   │   ├── csv_import.py
-│   │   └── import_helpers.py
-│   ├── static/
-│   │   ├── css/
-│   │   └── js/
-│   ├── templates/
-│   ├── routes_dashboard.py
-│   ├── routes_transactions.py
-│   ├── routes_upload.py
-│   ├── routes_root.py
-│   ├── db.py
-│   ├── models.py
-│   └── main.py
-├── database/
-│   └── finance.db   # gitignored
-├── uploads/
-├── requirements.txt
-└── README.md
+---
+
+## Why this project exists
+I previously tracked finances using CSV → Python → Excel workflows.  
+This app replaces that flow with a **single, persistent, and user-friendly system** that:
+- keeps all transactions in SQL
+- provides fast monthly insights
+- reduces manual work and mistakes
+- makes financial analysis easier to read and reason about
+
+---
+
+## Tech stack
+- **Backend:** FastAPI
+- **Templating:** Jinja2
+- **ORM:** SQLAlchemy
+- **Database:** SQLite
+- **Frontend:** Vanilla JS, CSS
+- **Charts:** Chart.js
+
+---
+
+## Project structure (high level)
+app/
+main.py
+routes_*.py
+deps.py
+templates/
+static/
+services/
+scripts/
+uploads/        # gitignored
+*.db            # gitignored
+
+
+---
+
+## Setup
+
+### 1) Create virtual environment
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+
+
+## Current version
+
+**v1 — Stable personal MVP**
+
+✔ Upload → review → save  
+✔ Dashboard analytics  
+✔ Full transaction filtering  
+✔ Legacy Excel data migrated  
+
+This version is stable enough for monthly real usage.
+
+---
+
+## Future ideas / Roadmap
+
+### Short-term (v2)
+- Dashboard UI polish
+- Improve “Previous month transactions” UX
+- Import history tracking (which months were imported)
+- Smarter category management
+
+### Medium-term (v1.x)
+- Rule-based auto-categorization
+- AI-assisted category suggestions
+- Monthly trend comparisons
+- Better error reporting & import diagnostics
+
+### Long-term (v2+)
+- Crypto portfolio tracking
+- Stock portfolio tracking
+- Investment performance overview
+- Optional authentication & sessions
+- Export & backup:
+  - CSV export
+  - Google Drive sync
+  - Notion export
+
+---
+
+## Notes
+- Database is local SQLite
+- Deleting the database file will reset all data
+- This repository represents a learning + personal productivity project

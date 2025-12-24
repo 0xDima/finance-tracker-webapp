@@ -1,4 +1,6 @@
-// upload.js
+// app/static/js/upload.js
+// Role: Upload page client-side behavior — manages CSV file selection (click + drag/drop), keeps the <input type="file"> in sync,
+//       renders the selected file list with per-file bank selection, provides a preview modal, validates submit, and applies top-bar scroll styling.
 
 const uploadArea = document.getElementById("upload-area");
 const fileInput = document.getElementById("file-input");
@@ -13,14 +15,14 @@ const previewClose = document.getElementById("preview-close");
 
 let files = [];
 
-// Sync files array with input element
+// Sync `files` array with the native <input type="file"> element so form submission includes the current selection.
 function syncInputFiles() {
     const dt = new DataTransfer();
     files.forEach(f => dt.items.add(f));
     fileInput.files = dt.files;
 }
 
-// Format bytes
+// Format bytes for display in the file list (e.g., "12 KB", "3.4 MB").
 function formatBytes(bytes) {
     if (!bytes && bytes !== 0) return "";
     const units = ["B", "KB", "MB", "GB"];
@@ -33,7 +35,7 @@ function formatBytes(bytes) {
     return `${value.toFixed(value < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-// Render file list
+// Render file list UI based on current `files`.
 function renderFileList() {
     fileRowsContainer.innerHTML = "";
 
@@ -56,6 +58,7 @@ function renderFileList() {
         meta.className = "file-meta";
         meta.textContent = `${formatBytes(file.size)} • CSV`;
 
+        // Bank select name matches backend expectation ("banks") and is repeated per file row.
         const bankSelect = document.createElement("select");
         bankSelect.className = "file-bank-select";
         bankSelect.name = "banks";
@@ -78,16 +81,18 @@ function renderFileList() {
     });
 }
 
-// Handle file selection
+// Handle file selection from either input picker or drag/drop.
 function handleFiles(selectedFiles) {
     if (!selectedFiles || !selectedFiles.length) return;
 
+    // Only accept CSV files.
     const newFiles = Array.from(selectedFiles).filter(f =>
         f.name.toLowerCase().endsWith(".csv")
     );
 
     files = files.concat(newFiles);
 
+    // Enforce max file count for the upload flow.
     if (files.length > 3) {
         files = files.slice(0, 3);
         alert("You can upload up to 3 CSV files.");
@@ -97,7 +102,7 @@ function handleFiles(selectedFiles) {
     renderFileList();
 }
 
-// Preview modal
+// ===== Preview modal =====
 function openModal() {
     previewModal.setAttribute("aria-hidden", "false");
 }
@@ -108,6 +113,7 @@ function closeModal() {
     previewTitle.textContent = "";
 }
 
+// Reads the file client-side and shows a small snippet (first ~40 lines).
 function handlePreview(file) {
     const reader = new FileReader();
     reader.onload = e => {
@@ -125,17 +131,21 @@ function handlePreview(file) {
     reader.readAsText(file);
 }
 
-// Events
+// ===== Events =====
+
+// Click on the dropzone opens native file picker.
 uploadArea.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
     fileInput.click();
 });
 
+// Native file picker selection.
 fileInput.addEventListener("change", e => {
     handleFiles(e.target.files);
 });
 
+// Drag/drop UI state (adds/removes .dragover class).
 ["dragenter", "dragover"].forEach(eventName => {
     uploadArea.addEventListener(eventName, e => {
         e.preventDefault();
@@ -152,6 +162,7 @@ fileInput.addEventListener("change", e => {
     });
 });
 
+// Handle dropped files.
 uploadArea.addEventListener("drop", e => {
     e.preventDefault();
     e.stopPropagation();
@@ -161,6 +172,7 @@ uploadArea.addEventListener("drop", e => {
     handleFiles(droppedFiles);
 });
 
+// Modal close controls.
 previewClose.addEventListener("click", closeModal);
 
 previewModal.addEventListener("click", e => {
@@ -177,6 +189,7 @@ document.addEventListener("keydown", e => {
 
 const uploadForm = document.getElementById("upload-form");
 
+// Prevent submit when no files are selected.
 uploadForm.addEventListener("submit", e => {
     if (!files.length) {
         e.preventDefault();
@@ -186,7 +199,7 @@ uploadForm.addEventListener("submit", e => {
     syncInputFiles();
 });
 
-// Sticky header shadow on scroll
+// Sticky header shadow on scroll (visual only).
 let lastScrollTop = 0;
 window.addEventListener("scroll", () => {
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;

@@ -1,4 +1,8 @@
-# routes_root.py
+# app/routes_root.py
+# Role: Root-level routes for the application.
+#       Defines the base ("/") endpoint, currently used as a simple landing/redirect
+#       into the main dashboard view.
+
 """
 Root / basic endpoints (health, landing).
 """
@@ -11,8 +15,4 @@ router = APIRouter()
 
 @router.get("/")
 def read_root():
-    """
-    Simple health check / landing endpoint.
-    Later we might redirect this to /dashboard.
-    """
     return RedirectResponse(url="/dashboard", status_code=302)

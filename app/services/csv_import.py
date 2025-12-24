@@ -1,9 +1,15 @@
-# csv_import.py
+# app/services/csv_import.py
+#
+# CSV Import Service
+# Handles parsing and normalization of bank transaction CSV files from multiple banks
+# (Revolut, Erste, Monobank) into a unified transaction format for batch processing.
 
 from typing import List, Dict
 import pandas as pd
 import numpy as np
 
+
+# ---- Utility Functions ----
 
 def parse_eu_number(value: str) -> float:
     """
@@ -29,6 +35,8 @@ def parse_eu_number(value: str) -> float:
     except ValueError:
         return 0.0
 
+
+# ---- Bank-Specific Parsers ----
 
 def parse_revolut(file_path: str) -> List[Dict]:
     """
@@ -153,6 +161,8 @@ def parse_monobank(file_path: str) -> List[Dict]:
 
     return df.to_dict(orient="records")
 
+
+# ---- Main Parser Dispatcher ----
 
 def parse_csv_for_bank(file_path: str, bank: str) -> List[Dict]:
     """

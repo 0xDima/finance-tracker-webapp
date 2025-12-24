@@ -1,11 +1,17 @@
 // app/static/js/transactions.js
+// Role: Transactions page client-side behavior — handles header scroll state, filters UX (date range + presets),
+//       multi-select dropdown interactions, and transaction row expand/collapse with date formatting.
+
 (function () {
+  // Small query helpers (avoid repeating document.querySelector boilerplate).
   function qs(sel, root = document) { return root.querySelector(sel); }
   function qsa(sel, root = document) { return Array.from(root.querySelectorAll(sel)); }
 
+  // Marks the page as ready to trigger initial CSS transitions/animations.
   const page = qs('[data-page]');
   if (page) requestAnimationFrame(() => page.classList.add('is-ready'));
 
+  // Sticky topbar shadow on scroll (purely visual).
   const topbar = qs('[data-topbar]');
   function updateTopbar() {
     if (!topbar) return;
@@ -15,6 +21,7 @@
   updateTopbar();
   window.addEventListener('scroll', updateTopbar, { passive: true });
 
+  // Collapsible filter panel (primarily for smaller screens).
   const filtersToggle = qs('[data-filters-toggle]');
   const filtersBody = qs('[data-filters-body]');
   function setFiltersCollapsed(collapsed) {
@@ -31,6 +38,7 @@
     if (mq.matches) setFiltersCollapsed(false);
   }
 
+  // ===== Date range wiring (flatpickr + fallback inputs) =====
   const form = qs('form.filters');
   const dateRangeInput = qs('#date_range');
   const startInput = qs('#start_date');
@@ -40,6 +48,7 @@
   function pad2(n) { return String(n).padStart(2, '0'); }
   function toYMD(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
 
+  // Keeps the read-only range input in sync with the underlying start/end inputs.
   function updateDateRangeText() {
     if (!dateRangeInput || !startInput || !endInput) return;
     const s = (startInput.value || '').trim();
@@ -57,8 +66,10 @@
   if (endInput) endInput.addEventListener('change', updateDateRangeText);
   updateDateRangeText();
 
+  // Shows the fallback date inputs when JS is active (CSS can key off .js-on).
   if (fallbackWrap) fallbackWrap.classList.add('js-on');
 
+  // Applies preset date ranges (used by preset buttons).
   function applyPreset(preset) {
     const now = new Date();
     let s = null, e = null;
@@ -80,6 +91,7 @@
     return { s, e };
   }
 
+  // Flatpickr date range picker enhancement (optional; page still works without it).
   let fp = null;
   if (window.flatpickr && dateRangeInput && startInput && endInput) {
     dateRangeInput.setAttribute('readonly', 'readonly');
@@ -104,12 +116,14 @@
       }
     });
 
+    // Preserve server-rendered start/end values by pre-loading the picker.
     if (existingStart && existingEnd) {
       fp.setDate([existingStart, existingEnd], false);
       setDates(startInput.value, endInput.value);
     }
   }
 
+  // Preset buttons update both the underlying inputs and the flatpickr UI (if present).
   qsa('[data-preset]').forEach(btn => {
     btn.addEventListener('click', () => {
       const preset = btn.getAttribute('data-preset');
@@ -119,6 +133,7 @@
     });
   });
 
+  // On submit: omit empty start/end fields from the query string by removing their `name` attributes.
   if (form) {
     form.addEventListener('submit', () => {
       updateDateRangeText();
@@ -134,13 +149,15 @@
     });
   }
 
-  // ===== Multi-select helpers =====
+  // ===== Multi-select helpers (accounts/categories/etc.) =====
   const multiSelects = qsa('details.multi-select');
 
+  // Ensures only one multi-select dropdown is open at a time.
   function closeAllMultiSelects(except) {
     multiSelects.forEach(d => { if (d !== except) d.removeAttribute('open'); });
   }
 
+  // Updates the “meta” text (e.g., "3 selected" / "Any") shown in the summary.
   function updateMeta(details) {
     const group = details.getAttribute('data-multiselect');
     const meta = qs(`[data-multi-meta="${group}"]`);
@@ -149,6 +166,7 @@
     meta.textContent = checked ? `${checked} selected` : 'Any';
   }
 
+  // Positions the dropdown panel to avoid clipping the viewport (open up/down, align left/right).
   function positionPanel(details) {
     const panel = qs('.multi-panel', details);
     const summary = qs('summary', details);
@@ -191,6 +209,7 @@
   }
 
   multiSelects.forEach(details => {
+    // Optional search input inside a multi-select panel.
     const search = qs('[data-multi-search]', details);
     const items = qsa('[data-multi-item]', details);
 
@@ -217,6 +236,7 @@
     });
   });
 
+  // Clear buttons for multi-select groups.
   qsa('[data-clear-group]').forEach(btn => {
     btn.addEventListener('click', () => {
       const group = btn.getAttribute('data-clear-group');
@@ -227,6 +247,7 @@
     });
   });
 
+  // Removable chips reflect active filters; clicking a chip unchecks its underlying checkbox.
   qsa('.chip[data-chip-for]').forEach(chip => {
     chip.addEventListener('click', () => {
       const group = chip.getAttribute('data-chip-for');
@@ -241,18 +262,21 @@
     });
   });
 
+  // Click outside closes any open multi-select panels.
   document.addEventListener('click', (e) => {
     qsa('details.multi-select[open]').forEach(openDetails => {
       if (!openDetails.contains(e.target)) openDetails.removeAttribute('open');
     });
   });
 
+  // Escape closes any open multi-select panels.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       qsa('details.multi-select[open]').forEach(openDetails => openDetails.removeAttribute('open'));
     }
   });
 
+  // Reposition an open panel on viewport changes.
   const reposition = () => {
     const openOne = qs('details.multi-select[open]');
     if (openOne) positionPanel(openOne);
@@ -260,6 +284,7 @@
   window.addEventListener('resize', reposition, { passive: true });
   window.addEventListener('scroll', reposition, { passive: true });
 
+  // Initialize meta text on load.
   multiSelects.forEach(updateMeta);
 
   // ===== Date formatting (collapsed rows: "November 5") =====
@@ -282,6 +307,7 @@
   function getDetails(row) { return qs('[data-row-details]', row); }
   function getDateCell(row) { return qs('[data-date-cell]', row); }
 
+  // Switches the date rendering depending on expanded/collapsed state without losing the original value.
   function syncDateDisplay(row, expanded) {
     const cell = getDateCell(row);
     if (!cell) return;
@@ -304,6 +330,7 @@
     row.classList.toggle('is-open', expanded);
     syncDateDisplay(row, expanded);
 
+    // Clicking a row toggles details unless the click originated from an interactive control.
     row.addEventListener('click', (e) => {
       const t = e.target;
       if (!t) return;
@@ -324,11 +351,13 @@
     }
   });
 
+  // Expand/collapse all controls.
   const expandAllBtn = qs('[data-expand-all]');
   const collapseAllBtn = qs('[data-collapse-all]');
   if (expandAllBtn) expandAllBtn.addEventListener('click', () => rows.forEach(r => setRowExpanded(r, true)));
   if (collapseAllBtn) collapseAllBtn.addEventListener('click', () => rows.forEach(r => setRowExpanded(r, false)));
 
+  // Adds a subtle shadow when the table body is scrolled vertically (visual only).
   const tableScroll = qs('[data-table-scroll]');
   function updateTableShadow() {
     if (!tableScroll) return;

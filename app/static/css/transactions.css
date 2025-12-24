@@ -1,4 +1,11 @@
-/* app/static/css/transactions.css */
+/* app/static/css/transactions.css
+ *
+ * Transactions Page Styles
+ * Stylesheet for the transactions list view featuring advanced filtering,
+ * sortable tables, expandable transaction details, and responsive layout.
+ */
+
+/* ---- CSS Variables ---- */
 
 :root{
   --bg: #0b0f17;
@@ -28,6 +35,8 @@
   --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 
+/* ---- Base Styles ---- */
+
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 body{
@@ -49,6 +58,8 @@ body{
   transition: opacity 240ms ease, transform 240ms ease;
 }
 .page-fade.is-ready{ opacity:1; transform:none; }
+
+/* ---- Top Navigation Bar ---- */
 
 .tx-topbar{
   position: sticky;
@@ -82,6 +93,8 @@ body{
   text-overflow: ellipsis;
 }
 
+/* ---- Main Content Shell ---- */
+
 .tx-shell{
   max-width: 1240px;
   margin: 0 auto;
@@ -91,6 +104,8 @@ body{
   gap: 14px;
 }
 
+/* ---- Card Components ---- */
+
 .card{
   background: var(--card);
   border: 1px solid rgba(255,255,255,.09);
@@ -99,7 +114,7 @@ body{
   overflow: hidden;
 }
 
-/* ✅ allow dropdown panels to render/click outside the card */
+/* Allow dropdown panels to render/click outside the card */
 .tx-card-filters{
   overflow: visible;
   position: relative;
@@ -120,6 +135,8 @@ body{
 .card-head-left{ display:flex; flex-direction:column; }
 .card-head-right{ display:flex; align-items:center; gap: 10px; }
 
+/* ---- Icon Buttons ---- */
+
 .icon-btn{
   display:inline-flex;
   align-items:center;
@@ -138,6 +155,8 @@ body{
 .icon-btn-text{ font-size: 13px; font-weight: 650; }
 .icon-btn-icon{ color: var(--muted); transition: transform 160ms ease; }
 .tx-filters-toggle[aria-expanded="false"] .icon-btn-icon{ transform: rotate(-90deg); }
+
+/* ---- Filter Section ---- */
 
 .filters{ padding: 14px; }
 .filters-body.is-collapsed{ display:none; }
@@ -182,6 +201,8 @@ body{
   font-weight: 800;
   margin-bottom: 8px;
 }
+
+/* ---- Form Inputs ---- */
 
 .text-input{
   width:100%;
@@ -242,6 +263,8 @@ body{
 }
 .money-input .text-input{ padding-left: 28px; }
 
+/* ---- Buttons ---- */
+
 .btn{
   display:inline-flex;
   align-items:center;
@@ -267,7 +290,8 @@ body{
 .btn-small{ padding: 10px 10px; font-size: 13px; }
 .topbar-btn{ border-radius: 999px; padding: 10px 12px; }
 
-/* Multi-select */
+/* ---- Multi-Select Dropdown ---- */
+
 .multi-select{ position:relative; }
 .multi-summary{
   list-style:none;
@@ -354,6 +378,8 @@ body{
   gap: 10px;
 }
 
+/* ---- Segmented Control ---- */
+
 .seg{
   display:flex;
   border: 1px solid rgba(255,255,255,.10);
@@ -372,6 +398,8 @@ body{
 }
 .seg-btn:hover{ background: rgba(255,255,255,.05); }
 .seg-btn:focus{ outline:none; box-shadow: 0 0 0 4px var(--focus-soft) inset; }
+
+/* ---- Transactions Table ---- */
 
 .table-scroll{
   max-height: 62vh;
@@ -407,6 +435,8 @@ body{
 .transactions-table tbody tr.row{ cursor:pointer; }
 .transactions-table tbody tr.row:hover td{ background: rgba(255,255,255,.02); }
 
+/* ---- Table Cells & Content ---- */
+
 .col-amt, .amount-cell{ text-align:right; white-space: nowrap; }
 .sort-link{ color: inherit; text-decoration: none; display:inline-flex; align-items:center; gap: 8px; }
 .sort-link:hover{ color: var(--text); text-decoration: underline; }
@@ -438,6 +468,8 @@ body{
 .desc-top{ display:flex; align-items:baseline; justify-content:space-between; gap: 12px; }
 .desc-text{ font-weight: 650; color: var(--text); }
 .row-hint{ font-size: 12px; color: var(--muted-2); white-space:nowrap; }
+
+/* ---- Expandable Row Details ---- */
 
 .row-details{ margin-top: 10px; }
 .row-details-summary{ display:none; }
@@ -490,6 +522,8 @@ body{
   margin-right: 6px;
 }
 
+/* ---- Table Summary Footer ---- */
+
 .table-summary{
   margin: 12px 14px 14px;
   background: rgba(255,255,255,.02);
@@ -517,6 +551,8 @@ body{
   opacity: .8;
 }
 
+/* ---- Empty State ---- */
+
 .empty{
   padding: 46px 16px 54px;
   text-align:center;
@@ -540,6 +576,8 @@ body{
 .empty-title{ font-size: 15px; font-weight: 800; }
 .empty-sub{ font-size: 13px; color: var(--muted); }
 
+/* ---- Responsive Design ---- */
+
 @media (max-width: 1100px){
   .filter-block{ grid-column: span 6; }
   .filter-span-2{ grid-column: span 12; }
@@ -553,6 +591,9 @@ body{
   .transactions-table{ min-width: 820px; }
   .table-summary-divider{ display:none; }
 }
+
+/* ---- Accessibility ---- */
+
 @media (prefers-reduced-motion: reduce){
   .page-fade,
   .text-input,

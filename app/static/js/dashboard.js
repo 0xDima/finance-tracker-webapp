@@ -1,4 +1,10 @@
+// app/static/js/dashboard.js
+// Role: Dashboard client-side behavior — reads server-rendered JSON, renders the spending-by-category doughnut chart + legend,
+//       and enables quick navigation from a category to filtered monthly transactions.
+
 (function () {
+  // Reads JSON embedded in the DOM (typically <script type="application/json" id="...">...</script>).
+  // Returns `fallback` if the element is missing, empty, or contains invalid JSON.
   function readJsonTag(id, fallback) {
     try {
       const el = document.getElementById(id);
@@ -11,13 +17,17 @@
     }
   }
 
+  // Month date range used to build the default dashboard period and to deep-link into transactions with the same range.
   const monthRange = readJsonTag('month-range-data', { start_date: null, end_date: null });
+  // Category totals provided by the backend for the current month range.
   const rawData = readJsonTag('spending-by-category-data', []);
 
+  // Normalizes category names to reduce duplicates due to whitespace differences.
   function normLabel(s) {
     return String(s || '').trim().replace(/\s+/g, ' ');
   }
 
+  // Aggregate totals by normalized category label (defensive against malformed payloads).
   const totals = {};
   for (const item of rawData) {
     if (!item) continue;
@@ -28,15 +38,18 @@
     totals[label] = (totals[label] || 0) + value;
   }
 
+  // Sorted labels/values drive both the chart and the custom legend.
   const labels = Object.keys(totals).sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
   const values = labels.map(l => totals[l] || 0);
 
+  // Static palette for category chart/legend swatches (cycled if categories exceed palette size).
   const colors = [
     "#9bbcff", "#b6f0d2", "#ffd6a5", "#f1b5ff",
     "#ff9ea6", "#a6fff4", "#ffe98a", "#c7d2ff",
     "#d0ffb6", "#ffb7e0", "#cbd5e1", "#fca5a5"
   ];
 
+  // Navigates to /transactions while preserving the dashboard month range and applying the chosen category filter.
   function goToTransactions(category) {
     const start = monthRange?.start_date;
     const end = monthRange?.end_date;
@@ -49,6 +62,7 @@
     window.location.href = url.toString();
   }
 
+  // Builds the clickable category legend (separate from Chart.js legend for custom styling/UX).
   function renderLegend() {
     const legend = document.getElementById('categoryLegend');
     if (!legend) return;
@@ -99,10 +113,12 @@
     });
   }
 
+  // Renders (or re-renders) the Chart.js doughnut chart using the precomputed labels/values.
   function buildChart() {
     const canvas = document.getElementById('spendingByCategoryChart');
     if (!canvas || typeof Chart === 'undefined') return;
 
+    // Ensure we don't stack multiple chart instances on hot reloads or repeated inits.
     const existing = Chart.getChart(canvas);
     if (existing) existing.destroy();
 
@@ -124,7 +140,7 @@
         maintainAspectRatio: false,
         cutout: '72%',
         plugins: {
-          legend: { display: false },
+          legend: { display: false }, // legend is rendered manually for click-to-filter UX
           tooltip: {
             callbacks: {
               label(ctx) {
@@ -138,6 +154,7 @@
     });
   }
 
+  // Applies staggered fade-in animation classes to key dashboard elements.
   function fadeIn() {
     const nodes = document.querySelectorAll('.card, .topbar');
     nodes.forEach((n, idx) => {
@@ -146,10 +163,12 @@
     });
   }
 
+  // Initial render on page load.
   renderLegend();
   buildChart();
   fadeIn();
 
+  // Throttled rebuild on resize to keep the doughnut chart crisp/responsive.
   let rAF = null;
   window.addEventListener('resize', () => {
     if (rAF) cancelAnimationFrame(rAF);

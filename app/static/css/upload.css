@@ -1,4 +1,6 @@
-/* upload.css */
+/* app/static/css/upload.css */
+/* Role: Styles the Upload page where users select and configure bank statement files before preview/import. */
+/* Scope: Dropzone UI, file list with bank selectors, action buttons, and preview modal (dark theme). */
 
 :root {
     --bg-primary: #0a0a0a;
@@ -21,6 +23,7 @@
     padding: 0;
 }
 
+/* ---- Base page ---- */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
     background: var(--bg-primary);
@@ -39,7 +42,7 @@ body {
     min-height: 100vh;
 }
 
-/* Top bar */
+/* ---- Top bar (sticky header with actions) ---- */
 .top-bar {
     position: sticky;
     top: 0;
@@ -80,7 +83,7 @@ body {
     gap: 8px;
 }
 
-/* Buttons */
+/* ---- Buttons ---- */
 .btn-primary,
 .btn-secondary {
     padding: 8px 16px;
@@ -125,14 +128,14 @@ body {
     border-color: var(--border-secondary);
 }
 
-/* Main content */
+/* ---- Main content container ---- */
 .main-content {
     max-width: 1200px;
     margin: 0 auto;
     padding: 32px 24px 80px;
 }
 
-/* Card */
+/* ---- Card layout ---- */
 .card {
     background: var(--bg-secondary);
     border: 1px solid var(--border-primary);
@@ -160,7 +163,7 @@ body {
     padding: 24px;
 }
 
-/* Dropzone */
+/* ---- File dropzone ---- */
 .dropzone {
     border: 2px dashed var(--border-secondary);
     border-radius: 12px;
@@ -176,6 +179,7 @@ body {
     background: var(--bg-secondary);
 }
 
+/* Applied via JS when dragging files over the dropzone */
 .dropzone.dragover {
     border-color: var(--accent);
     background: rgba(59, 130, 246, 0.05);
@@ -211,16 +215,18 @@ body {
     color: var(--text-secondary);
 }
 
+/* Native file input is hidden; dropzone triggers it */
 #file-input {
     display: none;
 }
 
-/* File list */
+/* ---- Selected file list ---- */
 .file-list-container {
     margin-top: 24px;
     display: none;
 }
 
+/* Shown once at least one file is added */
 .file-list-container.has-files {
     display: block;
 }
@@ -276,6 +282,7 @@ body {
     white-space: nowrap;
 }
 
+/* Bank selector per file (used to choose parser logic) */
 .file-bank-select {
     font-size: 13px;
     padding: 6px 32px 6px 12px;
@@ -301,6 +308,7 @@ body {
     border-color: var(--accent);
 }
 
+/* Opens preview modal for the selected file */
 .preview-link {
     font-size: 13px;
     border: none;
@@ -315,7 +323,7 @@ body {
     color: var(--accent-hover);
 }
 
-/* Actions footer */
+/* ---- Footer actions (continue/import) ---- */
 .actions-footer {
     margin-top: 24px;
     display: flex;
@@ -323,7 +331,7 @@ body {
     gap: 12px;
 }
 
-/* Modal */
+/* ---- Preview modal ---- */
 .modal {
     position: fixed;
     inset: 0;
@@ -334,6 +342,7 @@ body {
     padding: 16px;
 }
 
+/* Visibility controlled via aria-hidden attribute */
 .modal[aria-hidden="false"] {
     display: flex;
 }
@@ -406,6 +415,7 @@ body {
     padding: 0;
 }
 
+/* Raw file preview (monospace, scrollable) */
 .preview-content {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 12px;
@@ -419,7 +429,7 @@ body {
     min-height: 200px;
 }
 
-/* Responsive */
+/* ---- Responsive adjustments ---- */
 @media (max-width: 768px) {
     .top-bar-content {
         flex-direction: column;

@@ -1,4 +1,6 @@
 <!-- app/templates/transactions.html -->
+<!-- Role: Transactions Jinja2 template — renders the Transactions page with filter controls (date range, search, amount, category/account multi-select),
+     server-side sorted results table, expandable per-row details, and a summary footer. Enhanced by transactions.js and flatpickr. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,6 +62,7 @@
                 </div>
               </div>
 
+              <!-- Read-only display field for the flatpickr range UI (backed by start_date/end_date inputs below) -->
               <input
                 type="text"
                 id="date_range"
@@ -336,6 +339,7 @@
             <tbody>
               {% for tx in transactions %}
               <tr class="row tx-row" data-tx-row>
+                <!-- Date cell is dynamically formatted when row is collapsed (see transactions.js) -->
                 <td class="date-cell mono" data-date-cell>{{ tx.date }}</td>
 
                 <td class="desc-cell">

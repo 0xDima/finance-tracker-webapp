@@ -1,4 +1,6 @@
-/* upload_preview.css */
+/* app/static/css/upload_preview.css */
+/* Role: Styles the Upload Preview page (import review UI) — header/actions, summary stats, and the editable transactions table. */
+/* Notes: Dark theme tokens live in :root; table is scrollable with sticky header; “manual-row” styling hints user-entered rows. */
 
 * {
     margin: 0;
@@ -6,6 +8,7 @@
     box-sizing: border-box;
 }
 
+/* ---- Theme tokens (dark UI) ---- */
 :root {
     --bg-primary: #0a0a0a;
     --bg-secondary: #111111;
@@ -27,6 +30,7 @@
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
+/* ---- Base layout ---- */
 body {
     background: var(--bg-primary);
     color: var(--text-primary);
@@ -49,6 +53,7 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---- Sticky page header + actions ---- */
 .page-header {
     position: sticky;
     top: 0;
@@ -87,6 +92,7 @@ body {
     gap: 12px;
 }
 
+/* ---- Buttons (primary/secondary/ghost) ---- */
 .btn-primary,
 .btn-secondary,
 .btn-ghost {
@@ -138,6 +144,7 @@ body {
     background: var(--bg-card);
 }
 
+/* ---- Import summary strip ---- */
 .summary-card {
     margin: 24px 32px;
     padding: 20px 24px;
@@ -185,6 +192,7 @@ body {
     color: var(--accent);
 }
 
+/* ---- Table card + scroll container ---- */
 .table-card {
     margin: 0 32px 24px;
     background: var(--bg-card);
@@ -200,6 +208,7 @@ body {
     position: relative;
 }
 
+/* Visual separator when the table is scrolled vertically (paired with JS toggling .scrolled-y) */
 .table-scroll.scrolled-y::before {
     content: '';
     position: sticky;
@@ -218,6 +227,7 @@ body {
     font-size: 13px;
 }
 
+/* Sticky header for easier review while scrolling large imports */
 .transactions-table thead {
     position: sticky;
     top: 0;
@@ -246,6 +256,7 @@ body {
     background: var(--bg-card-hover);
 }
 
+/* Marks rows excluded from import (e.g., user checked “delete”) */
 .transactions-table tbody tr.deleted {
     opacity: 0.4;
 }
@@ -259,12 +270,14 @@ body {
     color: var(--text-primary);
 }
 
+/* ---- Column sizing + utility cells ---- */
 .col-delete,
 .cell-delete {
     width: 48px;
     text-align: center;
 }
 
+/* Hidden technical column (temp id used by the JS/import flow) */
 .col-temp-id,
 .cell-temp-id {
     display: none;
@@ -313,6 +326,7 @@ body {
     text-align: right;
 }
 
+/* ---- Amount pill styling (positive/negative) ---- */
 .amount {
     display: inline-flex;
     align-items: center;
@@ -333,6 +347,7 @@ body {
     background: var(--negative-bg);
 }
 
+/* ---- Category dropdown ---- */
 .col-category {
     min-width: 180px;
 }
@@ -361,6 +376,7 @@ body {
     box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
+/* ---- Notes column ---- */
 .col-notes {
     min-width: 200px;
     max-width: 300px;
@@ -371,10 +387,12 @@ body {
     font-size: 12px;
 }
 
+/* Used for form payload inputs that should not be visible in the table UI */
 .hidden-inputs {
     display: none;
 }
 
+/* Inline editing field used when editing cells in-place (paired with JS behavior) */
 .inline-input {
     width: 100%;
     padding: 6px 10px;
@@ -391,6 +409,7 @@ body {
     outline: none;
 }
 
+/* ---- Sticky footer actions (commit/back/etc.) ---- */
 .actions-footer {
     display: flex;
     justify-content: space-between;
@@ -408,11 +427,12 @@ body {
     gap: 12px;
 }
 
-/* subtle cue for new manual rows */
+/* Subtle cue for new manual rows */
 .manual-row td.manual-empty {
     color: var(--text-tertiary);
 }
 
+/* ---- Responsive tweaks ---- */
 @media (max-width: 768px) {
     .header-content {
         flex-direction: column;

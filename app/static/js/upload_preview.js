@@ -1,6 +1,10 @@
-// upload_preview.js
+// app/static/js/upload_preview.js
+// Role: Upload Preview client-side behavior — supports reviewing parsed transactions before import:
+//       header/table scroll styling, delete/select-all, category selection syncing, inline cell editing,
+//       and adding new manual transactions into the same form payload.
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Bootstraps all interactive behaviors on the preview/review table.
     initHeaderScroll();
     initTableScroll();
     initDeleteCheckboxes();
@@ -12,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initHeaderScroll() {
+    // Adds a shadow to the sticky header once the page has been scrolled.
     const header = document.querySelector(".page-header");
     if (!header) return;
 
@@ -22,6 +27,7 @@ function initHeaderScroll() {
 }
 
 function initTableScroll() {
+    // Adds a subtle separator effect when the table body is scrolled vertically.
     const scroll = document.querySelector(".table-scroll");
     if (!scroll) return;
 
@@ -32,6 +38,8 @@ function initTableScroll() {
 }
 
 function initDeleteCheckboxes(root = document) {
+    // Binds per-row "delete" checkboxes (soft delete / exclude from import).
+    // Uses a data flag to avoid double-binding when rows are dynamically added.
     root.querySelectorAll(".delete-checkbox").forEach((cb) => {
         if (cb.dataset.bound === "1") return;
         cb.dataset.bound = "1";
@@ -46,6 +54,7 @@ function initDeleteCheckboxes(root = document) {
 }
 
 function initSelectAll() {
+    // Toggles all delete checkboxes at once.
     const selectAll = document.getElementById("select-all");
     if (!selectAll) return;
 
@@ -61,6 +70,7 @@ function initSelectAll() {
 }
 
 function updateImportCount() {
+    // Updates the “X transactions to import” counter.
     const total = document.querySelectorAll(".tx-row").length;
     const deleted = document.querySelectorAll(".delete-checkbox:checked").length;
     const count = total - deleted;
@@ -69,6 +79,7 @@ function updateImportCount() {
 }
 
 function initCategorySelects(root = document) {
+    // Keeps the visible <select> in sync with the hidden form input used by the backend.
     root.querySelectorAll(".category-select").forEach((sel) => {
         if (sel.dataset.bound === "1") return;
         sel.dataset.bound = "1";
@@ -86,6 +97,7 @@ function initCategorySelects(root = document) {
 }
 
 function initInlineEditing() {
+  // Enables double-click inline editing for cells that declare a data-field attribute.
   const tbody = document.getElementById("tx-tbody");
   if (!tbody) return;
 
@@ -108,12 +120,14 @@ function initInlineEditing() {
 }
 
 function getHiddenInput(tempId, field) {
+    // Finds the hidden form input backing a given transaction field.
     return document.querySelector(
         `input[name="transactions[${cssEscape(tempId)}][${cssEscape(field)}]"]`
     );
 }
 
 function startEditingCell(cell, tempId, field) {
+    // Converts a table cell into an <input>, then commits back into hidden inputs on blur/Enter.
     if (cell.classList.contains("editing")) return;
 
     let initialValue = "";
@@ -182,6 +196,7 @@ function startEditingCell(cell, tempId, field) {
     };
 
     const cancelEdit = () => {
+        // Restores current hidden input value into the cell without modifying data.
         cell.classList.remove("editing");
         if (field === "amount_original") {
             updateAmountOriginalCell(cell, tempId);
@@ -198,6 +213,7 @@ function startEditingCell(cell, tempId, field) {
         }
     };
 
+    // Blur commits edits so users can click away naturally.
     input.addEventListener("blur", () => commitEdit());
 
     input.addEventListener("keydown", (e) => {
@@ -212,6 +228,7 @@ function startEditingCell(cell, tempId, field) {
 }
 
 function updateAmountOriginalCell(cell, tempId) {
+    // Renders combined "<amount> <currency>" view from the underlying hidden inputs.
     const amtInp = getHiddenInput(tempId, "amount_original");
     const currInp = getHiddenInput(tempId, "currency_original");
 
@@ -227,6 +244,7 @@ function updateAmountOriginalCell(cell, tempId) {
 }
 
 function updateAmountEurCell(cell, tempId) {
+    // Renders the EUR amount as a styled pill (positive/negative/empty).
     const inp = getHiddenInput(tempId, "amount_eur");
     const raw = inp ? inp.value : null;
 
@@ -260,6 +278,7 @@ function updateAmountEurCell(cell, tempId) {
 }
 
 function updateNotesCell(cell, fullValue) {
+    // Notes are truncated in the table for layout; full value remains in hidden input.
     const full = fullValue || "";
     const truncated = full.length > 40 ? full.slice(0, 40) + "…" : full;
     cell.textContent = truncated;
@@ -268,6 +287,7 @@ function updateNotesCell(cell, fullValue) {
 /* -------------------- Manual add row -------------------- */
 
 function initAddManualTransaction() {
+    // Adds a new editable row into the preview table and ensures it participates in form submission.
     const btn = document.getElementById("add-manual-tx");
     const tbody = document.getElementById("tx-tbody");
     if (!btn || !tbody) return;
@@ -277,13 +297,13 @@ function initAddManualTransaction() {
         const row = buildManualRow(tempId);
         tbody.appendChild(row);
 
-        // bind behaviors for new row
+        // Bind behaviors for the new row (delete toggle, category select sync, inline edits).
         initDeleteCheckboxes(row);
         initCategorySelects(row);
         initInlineEditing(row);
         updateImportCount();
 
-        // scroll to bottom + focus date cell for quick edit
+        // Scroll to bottom + focus date cell for quick entry.
         row.scrollIntoView({ behavior: "smooth", block: "end" });
         const dateCell = row.querySelector('td[data-field="date"]');
         if (dateCell) startEditingCell(dateCell, tempId, "date");
@@ -291,6 +311,7 @@ function initAddManualTransaction() {
 }
 
 function buildManualRow(tempId) {
+    // Constructs a new transaction <tr> matching the same hidden input schema as imported rows.
     const tr = document.createElement("tr");
     tr.className = "tx-row manual-row";
     tr.dataset.tempId = tempId;
@@ -321,7 +342,7 @@ function buildManualRow(tempId) {
         </td>
     `;
 
-    // show subtle placeholders for manual rows
+    // Show subtle placeholders for manual rows (CSS uses .manual-empty for muted styling).
     tr.querySelectorAll('td[data-field]').forEach(td => {
         td.classList.add("manual-empty");
         td.textContent = "";
@@ -338,7 +359,7 @@ function buildManualRow(tempId) {
 }
 
 function buildCategorySelectHtml(tempId) {
-    // keep exact same options as template
+    // Keep exact same options as template
     return `
       <select class="category-select" data-temp-id="${escapeHtml(tempId)}">
         <option value="" selected>Uncategorized</option>
@@ -367,6 +388,7 @@ function generateManualTempId() {
 }
 
 function parseAmountCurrency(raw) {
+    // Parses "amount currency" (e.g., "123.45 USD") with permissive fallbacks.
     const s = String(raw || "").trim();
     if (!s) return { amount: null, currency: null };
 
@@ -387,6 +409,7 @@ function parseAmountCurrency(raw) {
 }
 
 function normalizeNumber(s) {
+    // Normalizes decimal commas and converts to Number (returns null on invalid).
     const v = String(s || "").trim().replace(",", ".");
     if (!v) return null;
     const n = Number(v);
@@ -395,11 +418,12 @@ function normalizeNumber(s) {
 }
 
 function cssEscape(v) {
-    // minimal safe escape for attribute selectors
+    // Minimal safe escape for use inside attribute selectors.
     return String(v).replace(/(["\\\]\[])/g, "\\$1");
 }
 
 function escapeHtml(str) {
+    // Basic HTML escaping for values injected into innerHTML templates.
     return String(str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")

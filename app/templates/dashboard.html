@@ -1,3 +1,6 @@
+<!-- app/templates/dashboard.html -->
+<!-- Role: Dashboard Jinja2 template — renders the main overview page with month summary, status pills, spending-by-category chart + legend,
+     and a “Top 10 Biggest Transactions” table. JSON data is embedded for dashboard.js to render Chart.js and deep-link into Transactions. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,6 +17,7 @@
         <div class="topbar__subtitle">{{ month_label }}</div>
       </div>
 
+      <!-- Primary navigation (active state uses request.url.path) -->
       <div class="topbar__center" aria-label="Primary navigation">
         <a class="navbtn {% if request and request.url.path.startswith('/upload') %}navbtn--active{% endif %}"
            href="/upload">
@@ -26,6 +30,7 @@
       </div>
 
       <div class="topbar__right">
+        <!-- Import status for the current month label -->
         <div class="pill pill--status {% if previous_month_imported %}pill--ok{% else %}pill--bad{% endif %}">
           <span class="pill__dot" aria-hidden="true"></span>
           <span class="pill__statusText">
@@ -176,10 +181,12 @@
       </section>
     </main>
 
+    <!-- Embedded JSON payload used by dashboard.js (Chart.js + clickable legend) -->
     <script id="spending-by-category-data" type="application/json">
       {{ spending_by_category | tojson }}
     </script>
 
+    <!-- Embedded month range used to preserve the dashboard date window when linking to /transactions -->
     <script id="month-range-data" type="application/json">
       {{ {"start_date": month_start_iso, "end_date": next_month_start_iso} | tojson }}
     </script>

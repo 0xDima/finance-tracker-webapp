@@ -1,4 +1,8 @@
-# routes_transactions.py
+# app/routes_transactions.py
+# Role: Transactions-related routes.
+#       Renders the Transactions page with filtering, sorting, and summary totals,
+#       and includes a small debug helper endpoint for inserting test data.
+
 """
 Routes related to transactions list and simple debug helpers.
 """
@@ -15,13 +19,16 @@ from urllib.parse import urlencode
 
 from models import Transaction
 from app.deps import get_db, templates
-
 from app.services.import_helpers import get_month_range
 
 router = APIRouter()
 
 
-# Convert amount filters safely
+# -------------------------------------------------------------------
+# Helpers: safe parsing for optional query parameters
+# -------------------------------------------------------------------
+
+# Convert amount filters safely (empty/invalid -> None)
 def parse_optional_float(value: str) -> float | None:
     value = value.strip()
     if value == "":
@@ -32,6 +39,7 @@ def parse_optional_float(value: str) -> float | None:
         return None
 
 
+# Convert YYYY-MM-DD string into date (empty/None -> None)
 def parse_optional_date(s: str | None) -> date | None:
     if not s:
         return None
@@ -41,7 +49,9 @@ def parse_optional_date(s: str | None) -> date | None:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
-
+# -------------------------------------------------------------------
+# Transactions list page
+# -------------------------------------------------------------------
 
 @router.get("/transactions", response_class=HTMLResponse)
 def transactions_page(
@@ -58,7 +68,20 @@ def transactions_page(
     dir: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
+    """
+    Render the Transactions page.
 
+    Supports:
+    - Date filtering (explicit range or month shortcut)
+    - Text search (description / notes)
+    - Category and account multi-select filters (including "None")
+    - Amount range filtering
+    - Sorting by date or amount (asc/desc)
+
+    Returns an HTML page rendered via Jinja2.
+    """
+
+    # Resolve date range (explicit range > month shortcut > current month)
     if start_date and end_date:
         range_start = start_date
         range_end_exclusive = end_date + timedelta(days=1)
@@ -68,13 +91,13 @@ def transactions_page(
     else:
         range_start, range_end_exclusive, normalized_month = get_month_range(None)
 
-    # Base query (NO order_by here)
+    # Base query (NO order_by here; sorting applied later)
     query = db.query(Transaction).filter(
         Transaction.date >= range_start,
         Transaction.date < range_end_exclusive,
     )
 
-    # Search
+    # Text search (description + notes)
     if search:
         pattern = f"%{search}%"
         query = query.filter(
@@ -84,7 +107,7 @@ def transactions_page(
             )
         )
 
-    # Category filter (supports "None")
+    # Category filter (supports literal "None")
     if category:
         cat_conditions = []
         for cat in category:
@@ -94,16 +117,19 @@ def transactions_page(
                 cat_conditions.append(Transaction.category == cat)
         query = query.filter(or_(*cat_conditions))
 
-    # Categories for dropdown (includes None)
+    # All categories for filter UI (including None)
     all_categories_rows = (
         db.query(Transaction.category)
         .distinct()
         .order_by(Transaction.category.is_(None), Transaction.category)
         .all()
     )
-    all_categories = [row[0] if row[0] is not None else "None" for row in all_categories_rows]
+    all_categories = [
+        row[0] if row[0] is not None else "None"
+        for row in all_categories_rows
+    ]
 
-    # Account filter (supports "None")
+    # Account filter (supports literal "None")
     if account:
         acc_conditions = []
         for acc in account:
@@ -113,14 +139,17 @@ def transactions_page(
                 acc_conditions.append(Transaction.account_name == acc)
         query = query.filter(or_(*acc_conditions))
 
-    # Accounts for dropdown (includes None)
+    # All accounts for filter UI (including None)
     all_accounts_rows = (
         db.query(Transaction.account_name)
         .distinct()
         .order_by(Transaction.account_name.is_(None), Transaction.account_name)
         .all()
     )
-    all_accounts = [row[0] if row[0] is not None else "None" for row in all_accounts_rows]
+    all_accounts = [
+        row[0] if row[0] is not None else "None"
+        for row in all_accounts_rows
+    ]
 
     # Amount parsing + filters
     min_amount_val = parse_optional_float(min_amount)
@@ -132,10 +161,16 @@ def transactions_page(
     if max_amount_val is not None:
         query = query.filter(Transaction.amount_eur <= max_amount_val)
 
-    # Totals for filtered view (before sorting/pagination)
+    # Totals for the filtered result set (before sorting)
     income_sum, expense_sum, net_sum = db.query(
-        func.coalesce(func.sum(case((Transaction.amount_eur > 0, Transaction.amount_eur), else_=0.0)), 0.0),
-        func.coalesce(func.sum(case((Transaction.amount_eur < 0, Transaction.amount_eur), else_=0.0)), 0.0),
+        func.coalesce(
+            func.sum(case((Transaction.amount_eur > 0, Transaction.amount_eur), else_=0.0)),
+            0.0,
+        ),
+        func.coalesce(
+            func.sum(case((Transaction.amount_eur < 0, Transaction.amount_eur), else_=0.0)),
+            0.0,
+        ),
         func.coalesce(func.sum(Transaction.amount_eur), 0.0),
     ).select_from(Transaction).filter(*query._where_criteria).one()
 
@@ -145,20 +180,20 @@ def transactions_page(
     sort_col = Transaction.amount_eur if sort_key == "amount" else Transaction.date
     query = query.order_by(sort_col.asc() if sort_dir == "asc" else sort_col.desc())
 
+    # Helper to build sort URLs while preserving all existing query params
     def build_sort_url(column: str) -> str:
         next_dir = "asc" if (sort_key == column and sort_dir == "desc") else "desc"
 
-        # ✅ Keep ALL existing params, including repeated ones (category/account)
+        # Keep ALL existing params, including repeated ones (category/account)
         items = list(request.query_params.multi_items())
 
-        # Remove old sort/dir if present (could exist multiple times)
+        # Remove old sort/dir params (can appear multiple times)
         items = [(k, v) for (k, v) in items if k not in ("sort", "dir")]
 
         # Add new sort/dir
         items.append(("sort", column))
         items.append(("dir", next_dir))
 
-        # ✅ Properly URL-encode + keep repeated params
         return "/transactions?" + urlencode(items, doseq=True)
 
     transactions = query.all()
@@ -187,18 +222,20 @@ def transactions_page(
     )
 
 
-
-
-
+# -------------------------------------------------------------------
+# Debug helpers
+# -------------------------------------------------------------------
 
 @router.post("/add-test-transaction")
 def add_test_transaction(db: Session = Depends(get_db)):
     """
-    Debug endpoint: insert one hard-coded test transaction into the DB.
-    Useful to test that DB + models + /transactions page are working.
+    Debug endpoint.
+
+    Inserts a single hard-coded transaction into the database.
+    Useful for verifying DB connectivity, models, and the /transactions page.
     """
     test_tx = Transaction(
-        date = date.today(),
+        date=date.today(),
         description="Test transaction",
         currency_original="EUR",
         amount_original=-10.0,

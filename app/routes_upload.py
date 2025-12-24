@@ -1,4 +1,13 @@
-# routes_upload.py
+# app/routes_upload.py
+# Role: CSV upload/import workflow routes.
+#       Implements the multi-step flow:
+#       1) /upload (select CSVs + bank mapping)
+#       2) /upload/preview (parse + editable preview table)
+#       3) /upload/review (normalize posted edits + read-only confirmation)
+#       4) /upload/save-batch (persist to DB and cleanup in-memory batch)
+#
+#       Also includes a legacy JSON upload endpoint (/upload POST) kept for debugging.
+
 """
 Routes for the CSV upload → preview → review → save flow.
 """
@@ -43,7 +52,7 @@ def upload_page(request: Request):
     This page allows the user to:
     - pick one or more CSV files
     - select which bank each file belongs to
-    - submit the form to /upload/preview
+    - submit the form to /upload/preview (main HTML flow)
     """
     return templates.TemplateResponse(
         "upload.html",
@@ -63,15 +72,14 @@ async def upload_process(
     db: Session = Depends(get_db),  # not used currently, but kept for future
 ):
     """
-    Legacy / debug endpoint:
+    Legacy / debug endpoint.
 
     - Saves uploaded CSV files into uploads/batch_<id>
     - Parses them with parse_csvs
     - Returns a JSON payload with parsed transactions
 
     NOTE:
-        Your main flow now uses /upload/preview to show HTML preview.
-        You can keep this as a debugging endpoint, or remove it later.
+        The primary user-facing flow is /upload/preview → /upload/review → /upload/save-batch.
     """
     batch_id = str(uuid.uuid4())
 
@@ -87,7 +95,7 @@ async def upload_process(
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-    # Initialize batch structure in memory
+    # Initialize batch structure in memory for debugging/inspection
     PENDING_BATCHES[batch_id] = {
         "files": saved_paths,
         "transactions": {},
@@ -140,6 +148,7 @@ async def upload_preview(
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
+    # Batch container used throughout the multi-step upload flow
     PENDING_BATCHES[batch_id] = {
         "files": saved_paths,
         "transactions": {},
@@ -150,6 +159,7 @@ async def upload_preview(
 
     parse_csvs(batch, batch_id, saved_paths, banks)
 
+    # Convert internal store into a list tailored for the template (temp_id is used as the stable key)
     transactions_for_template: List[Dict[str, Any]] = []
     for temp_id in batch["order"]:
         tx_data = batch["transactions"][temp_id].copy()
@@ -175,15 +185,15 @@ async def upload_review(request: Request):
     """
     Step 2 of the main flow:
 
-    Called when user clicks "Import" on the preview page.
+    Called when the user continues from the preview page.
 
     Responsibilities:
     - Read all form fields from upload_preview.html
-    - Parse nested field names like transactions[t1][date]
-    - Group fields by temp_id into raw_tx dict
-    - Skip rows that were marked for deletion (delete_ids)
-    - Convert numeric fields (amount_original, amount_eur)
-    - Store cleaned list in PENDING_BATCHES[batch_id]["final"]
+    - Parse nested field names like transactions[t1][date] via TRANSACTION_KEY_RE
+    - Group fields by temp_id into raw_tx dicts
+    - Skip rows marked for deletion (delete_ids)
+    - Convert numeric fields (amount_original, amount_eur) when possible
+    - Store the cleaned list in PENDING_BATCHES[batch_id]["final"]
     - Render upload_review.html (read-only review table)
     """
 
@@ -192,6 +202,7 @@ async def upload_review(request: Request):
     batch_id = form.get("batch_id")
     delete_ids: List[str] = form.getlist("delete_ids")
 
+    # raw_tx[temp_id] -> { field: value, ... }
     raw_tx: Dict[str, Dict[str, Any]] = {}
 
     for key, value in form.items():
@@ -213,6 +224,7 @@ async def upload_review(request: Request):
         if temp_id in delete_ids:
             continue
 
+        # Build a normalized transaction dict for the final review step
         tx: Dict[str, Any] = {
             "temp_id": temp_id,
             "date": tx_data.get("date") or "",
@@ -223,6 +235,7 @@ async def upload_review(request: Request):
             "notes": tx_data.get("notes") or "",
         }
 
+        # Amount fields are best-effort conversions; invalid values become None
         try:
             tx["amount_original"] = float(tx_data.get("amount_original"))
         except Exception:
@@ -239,6 +252,7 @@ async def upload_review(request: Request):
 
         cleaned.append(tx)
 
+    # Persist cleaned rows into the in-memory batch for /upload/save-batch
     if batch_id:
         if batch_id not in PENDING_BATCHES:
             PENDING_BATCHES[batch_id] = {}
@@ -266,12 +280,12 @@ async def save_batch(
     """
     Step 3 of the main flow:
 
-    Called when user clicks "Save to database" on the review page.
+    Called when the user clicks "Save to database" on the review page.
 
     Responsibilities:
-    - Take cleaned tx dicts from PENDING_BATCHES[batch_id]["final"]
+    - Read cleaned tx dicts from PENDING_BATCHES[batch_id]["final"]
     - Convert each dict into a Transaction ORM object (build_transaction_from_dict)
-    - Insert them into the database in one transaction
+    - Insert them into the database in one transaction (commit/rollback)
     - Clean up the batch from memory
     - Redirect to /transactions
     """
@@ -306,6 +320,7 @@ async def save_batch(
         db.commit()
         print(f"[save-batch] Successfully inserted {len(orm_objects)} transactions for batch {batch_id!r}")
 
+        # Batch is no longer needed once persisted
         PENDING_BATCHES.pop(batch_id, None)
 
     except Exception as e:

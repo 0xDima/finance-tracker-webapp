@@ -1,3 +1,8 @@
+<!-- app/templates/upload.html -->
+<!-- Role: Upload Jinja2 template — renders the CSV upload entry point:
+     provides a drag/drop upload area, a dynamic file list with per-file bank selection and preview modal (handled by upload.js),
+     and submits selected files to /upload/preview for parsing. -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -22,6 +27,7 @@
         </header>
 
         <main class="main-content">
+            <!-- Posts selected CSV files to the preview step for parsing/normalization -->
             <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload/preview">
                 
                 <!-- Upload card -->
@@ -32,7 +38,7 @@
                     </div>
 
                     <div class="card-body">
-                        <!-- Dropzone -->
+                        <!-- Dropzone (click + drag/drop); file list and preview modal are managed by upload.js -->
                         <div class="dropzone" id="upload-area">
                             <div class="dropzone-icon">
                                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -45,6 +51,7 @@
                             </div>
                         </div>
 
+                        <!-- Native file input remains the source of truth for form submission (JS keeps it synced). -->
                         <input id="file-input" name="csv_files" type="file" accept=".csv,text/csv" multiple>
 
                         <!-- File list -->

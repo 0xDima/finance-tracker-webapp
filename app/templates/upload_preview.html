@@ -1,4 +1,7 @@
-<!-- upload_preview.html -->
+<!-- app/templates/upload_preview.html -->
+<!-- Role: Upload Preview Jinja2 template — renders the pre-import review screen for a parsed batch:
+     shows a scrollable transactions table, allows excluding rows, editing fields inline (via upload_preview.js),
+     selecting categories, and adding manual transactions before continuing to the review/commit step. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,6 +12,7 @@
 </head>
 <body>
     <div class="page-container">
+        <!-- Posts the edited transaction payload forward into the next upload step (/upload/review) -->
         <form id="preview-form" method="post" action="/upload/review">
             <input type="hidden" name="batch_id" value="{{ batch_id }}">
 
@@ -61,6 +65,7 @@
                         </thead>
                         <tbody id="tx-tbody">
                             {% for tx in transactions %}
+                            <!-- Each row is keyed by a temp_id to keep edits stable across the multi-step upload flow -->
                             <tr class="tx-row" data-temp-id="{{ tx.temp_id }}">
                                 <td class="cell-delete">
                                     <input type="checkbox" class="delete-checkbox checkbox" name="delete_ids" value="{{ tx.temp_id }}">
@@ -89,6 +94,7 @@
                                 </td>
                                 <td class="cell-category">
                                     {% set current_cat = tx.category or '' %}
+                                    <!-- Visible category select; JS syncs its value into the hidden input below -->
                                     <select class="category-select" data-temp-id="{{ tx.temp_id }}">
                                         <option value="" {% if current_cat == '' %}selected{% endif %}>Uncategorized</option>
                                         <option value="Groceries" {% if current_cat == 'Groceries' %}selected{% endif %}>Groceries</option>
@@ -111,6 +117,8 @@
                                         {{ tx.notes[:40] }}{% if tx.notes|length > 40 %}…{% endif %}
                                     {% endif %}
                                 </td>
+
+                                <!-- Hidden inputs are the source of truth posted to /upload/review; JS inline editing updates these. -->
                                 <td class="hidden-inputs">
                                     <input type="hidden" name="transactions[{{ tx.temp_id }}][date]" value="{{ tx.date }}">
                                     <input type="hidden" name="transactions[{{ tx.temp_id }}][account_name]" value="{{ tx.account_name }}">
