@@ -1,4 +1,4 @@
-# app/routes_upload.py
+# filename: app/routes_upload.py
 # Role: CSV upload/import workflow routes.
 #       Implements the multi-step flow:
 #       1) /upload (select CSVs + bank mapping)
@@ -14,7 +14,7 @@ Routes for the CSV upload → preview → review → save flow.
 
 import os
 import uuid
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Optional
 
 from fastapi import (
     APIRouter,
@@ -25,11 +25,13 @@ from fastapi import (
     Form,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from models import Transaction
 from app.services.csv_import import parse_csvs
 from app.services.import_helpers import build_transaction_from_dict
+from app.services.auto_categorize import categorize
 from app.deps import (
     templates,
     get_db,
@@ -38,6 +40,28 @@ from app.deps import (
 )
 
 router = APIRouter()
+
+# Allowed categories for AI validation (must match the dropdown on preview page)
+ALLOWED_CATEGORIES: List[str] = [
+    "Groceries",
+    "Transportation",
+    "Coffee",
+    "Dining & Restaurants",
+    "Shopping",
+    "Home",
+    "Cash Withdrawals",
+    "Entertainment & Subscriptions",
+    "Travelling",
+    "Education & Studying",
+    "Other",
+    "Investments",
+    "Income",
+]
+
+
+class SuggestCategoriesRequest(BaseModel):
+    batch_id: str
+    delete_ids: List[str] = []
 
 
 # -------------------------------------------------------------------
@@ -113,6 +137,82 @@ async def upload_process(
         "transaction_count": len(tx_list),
         "transactions": tx_list,
     }
+
+
+# -------------------------------------------------------------------
+# Auto-categorization endpoint (optional AI)
+# -------------------------------------------------------------------
+
+@router.post("/upload/suggest-categories")
+async def suggest_categories(payload: SuggestCategoriesRequest):
+    """
+    Suggest categories for the given batch_id.
+
+    Contract:
+    - Never throws to client (silent failure)
+    - Returns suggestions as:
+        { temp_id: { category, confidence, reason } }
+
+    Notes:
+    - This endpoint does NOT mutate PENDING_BATCHES.
+    - Frontend decides whether to apply results into hidden inputs.
+    """
+    try:
+        batch_id = (payload.batch_id or "").strip()
+        if not batch_id:
+            return {"batch_id": payload.batch_id, "suggestions": {}}
+
+        batch = PENDING_BATCHES.get(batch_id)
+        if not batch:
+            return {"batch_id": batch_id, "suggestions": {}}
+
+        delete_ids = set(payload.delete_ids or [])
+
+        suggestions: Dict[str, Dict[str, Any]] = {}
+
+        order = batch.get("order") or []
+        txs = batch.get("transactions") or {}
+
+        for temp_id in order:
+            if temp_id in delete_ids:
+                continue
+
+            tx = txs.get(temp_id)
+            if not isinstance(tx, dict):
+                continue
+
+            description = tx.get("description") or ""
+            account_name = tx.get("account_name") or ""
+            amount_eur = tx.get("amount_eur")
+
+            amt: Optional[float]
+            if amount_eur in (None, "", "None"):
+                amt = None
+            else:
+                try:
+                    amt = float(amount_eur)
+                except Exception:
+                    amt = None
+
+            cat, conf, reason = categorize(
+                description=description,
+                account_name=account_name,
+                amount_eur=amt,
+                allowed_categories=ALLOWED_CATEGORIES,
+            )
+
+            # Defensive: ensure response shape is stable
+            suggestions[temp_id] = {
+                "category": cat,
+                "confidence": float(conf) if isinstance(conf, (int, float)) else 0.0,
+                "reason": str(reason or ""),
+            }
+
+        return {"batch_id": batch_id, "suggestions": suggestions}
+
+    except Exception:
+        # Silent failure by design
+        return {"batch_id": payload.batch_id, "suggestions": {}}
 
 
 # -------------------------------------------------------------------

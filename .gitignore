@@ -37,6 +37,6 @@ notes/
 # Environment
 .env
 .env.local
-
+.env_dir_backup
 # Logs
 *.log
