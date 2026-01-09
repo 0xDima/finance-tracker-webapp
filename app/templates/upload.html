@@ -30,6 +30,46 @@
             <!-- Posts selected CSV files to the preview step for parsing/normalization -->
             <form id="upload-form" method="post" enctype="multipart/form-data" action="/upload/preview">
                 
+                {% if draft_imports and draft_imports|length > 0 %}
+                <div class="card draft-card">
+                    <div class="card-header draft-header">
+                        <div>
+                            <h2 class="card-title">Draft imports</h2>
+                            <p class="card-description">Pick up where you left off. Drafts are kept for 7 days.</p>
+                        </div>
+                        <div class="draft-summary">
+                            <span class="draft-count">{{ draft_imports|length }} drafts</span>
+                            <a class="btn-primary" href="/import/{{ draft_imports[0].id }}/preview">
+                                Continue latest
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="draft-list">
+                            {% for draft in draft_imports %}
+                            <div class="draft-row" data-import-id="{{ draft.id }}">
+                                <div class="draft-meta">
+                                    <div class="draft-id">Import {{ draft.id }}</div>
+                                    <div class="draft-subtitle">
+                                        {{ draft.count }} rows •
+                                        {{ draft.created_at.strftime('%Y-%m-%d %H:%M') if draft.created_at else '' }}
+                                    </div>
+                                </div>
+                                <div class="draft-actions">
+                                    <a class="btn-secondary btn-compact" href="/import/{{ draft.id }}/preview">
+                                        Continue
+                                    </a>
+                                    <button class="btn-ghost btn-compact draft-delete-btn" type="button" data-import-id="{{ draft.id }}">
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 <!-- Upload card -->
                 <div class="card upload-card">
                     <div class="card-header">

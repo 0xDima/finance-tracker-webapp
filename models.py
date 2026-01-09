@@ -3,7 +3,9 @@
 #       Currently defines the Transaction model, which represents
 #       a single normalized financial transaction stored in the database.
 
-from sqlalchemy import Column, Integer, String, Date, Float, Text
+from datetime import datetime
+
+from sqlalchemy import Column, Integer, String, Date, Float, Text, DateTime, ForeignKey
 from db import Base
 
 
@@ -44,3 +46,36 @@ class Transaction(Base):
 
     # Optional free-text notes
     notes = Column(Text, nullable=True)
+
+
+class ImportSession(Base):
+    """
+    ORM model representing a CSV import session.
+    """
+
+    __tablename__ = "import_sessions"
+
+    id = Column(String, primary_key=True, index=True)
+    status = Column(String, nullable=False, default="draft")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    committed_at = Column(DateTime, nullable=True)
+
+
+class StagingTransaction(Base):
+    """
+    ORM model representing a staged transaction during import.
+    """
+
+    __tablename__ = "staging_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    import_id = Column(String, ForeignKey("import_sessions.id"), index=True, nullable=False)
+    date = Column(Date, nullable=True)
+    description = Column(String, nullable=True)
+    currency_original = Column(String(3), nullable=True)
+    amount_original = Column(Float, nullable=True)
+    amount_eur = Column(Float, nullable=True)
+    account_name = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

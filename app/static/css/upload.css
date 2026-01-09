@@ -163,6 +163,95 @@ body {
     padding: 24px;
 }
 
+/* ---- Draft imports list ---- */
+.draft-card {
+    margin-bottom: 24px;
+}
+
+.draft-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.draft-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+}
+
+.draft-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.draft-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+}
+
+.draft-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-primary);
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.draft-row:hover {
+    border-color: var(--border-secondary);
+    background: var(--bg-secondary);
+}
+
+.draft-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.draft-id {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.draft-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.draft-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-compact {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-primary);
+}
+
+.btn-ghost:hover {
+    color: var(--text-primary);
+    border-color: var(--border-secondary);
+    background: var(--bg-secondary);
+}
+
 /* ---- File dropzone ---- */
 .dropzone {
     border: 2px dashed var(--border-secondary);
@@ -233,7 +322,7 @@ body {
 
 .file-list-header {
     display: grid;
-    grid-template-columns: 1fr auto 140px 80px;
+    grid-template-columns: 1fr auto 140px 80px 80px;
     gap: 16px;
     padding: 8px 12px;
     font-size: 12px;
@@ -251,7 +340,7 @@ body {
 
 .file-row {
     display: grid;
-    grid-template-columns: 1fr auto 140px 80px;
+    grid-template-columns: 1fr auto 140px 80px 80px;
     gap: 16px;
     align-items: center;
     padding: 12px;
@@ -321,6 +410,23 @@ body {
 
 .preview-link:hover {
     color: var(--accent-hover);
+}
+
+.remove-file-btn {
+    font-size: 12px;
+    border: 1px solid var(--border-secondary);
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.remove-file-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-secondary);
+    background: var(--bg-secondary);
 }
 
 /* ---- Footer actions (continue/import) ---- */
@@ -456,5 +562,20 @@ body {
 
     .modal-dialog {
         max-height: 90vh;
+    }
+
+    .draft-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .draft-summary {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .draft-row {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }

@@ -1,6 +1,6 @@
 <!-- app/templates/upload_review.html -->
-<!-- Role: Upload Review Jinja2 template — renders the final confirmation screen for an uploaded batch before persisting to SQLite:
-     shows the normalized transaction rows (read-only), provides a back button (history.back), and posts batch_id to /upload/save-batch. -->
+<!-- Role: Upload Review Jinja2 template — renders the final confirmation screen for a staged import before persisting to SQLite:
+     shows the normalized transaction rows (read-only), provides a back button (history.back), and posts import_id to /import/{id}/commit. -->
 
 <!DOCTYPE html>
 <html lang="en">
@@ -26,7 +26,7 @@
         <table class="transactions-table">
             <thead>
             <tr>
-                <th>Temp ID</th>
+                <th>ID</th>
                 <th>Date</th>
                 <th>Account</th>
                 <th>Description</th>
@@ -39,10 +39,10 @@
             <tbody>
             {% for tx in transactions %}
                 <tr>
-                    <td>{{ tx.temp_id }}</td>
-                    <td>{{ tx.date }}</td>
-                    <td>{{ tx.account_name }}</td>
-                    <td>{{ tx.description }}</td>
+                    <td>{{ tx.id }}</td>
+                    <td>{{ tx.date or "" }}</td>
+                    <td>{{ tx.account_name or "" }}</td>
+                    <td>{{ tx.description or "" }}</td>
                     <td>
                         {% if tx.amount_original is not none %}
                             {{ tx.amount_original }} {{ tx.currency_original or "" }}
@@ -70,8 +70,8 @@
         </button>
 
         <!-- Save to DB -->
-        <form method="post" action="/upload/save-batch" style="display:inline-block;">
-            <input type="hidden" name="batch_id" value="{{ batch_id }}">
+        <form method="post" action="/import/{{ import_id }}/commit" style="display:inline-block;">
+            <input type="hidden" name="import_id" value="{{ import_id }}">
             <button class="btn-primary" type="submit">
                 Save to database
             </button>

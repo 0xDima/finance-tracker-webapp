@@ -16,11 +16,12 @@ Here we only:
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from db import Base, engine
+from db import Base, engine, SessionLocal
 from app.routes_root import router as root_router
 from app.routes_transactions import router as transactions_router
 from app.routes_upload import router as upload_router
 from app.routes_dashboard import router as dashboard_router
+from app.services.import_cleanup import cleanup_old_draft_imports
 
 
 # -------------------------------------------------------------------
@@ -37,6 +38,20 @@ app = FastAPI(title="Finance Tracker")
 # Serve static files (CSS/JS) from /static
 # Maps URL path "/static/*" to files under app/static/
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+# -------------------------------------------------------------------
+# Startup cleanup
+# -------------------------------------------------------------------
+
+
+@app.on_event("startup")
+def cleanup_old_imports():
+    db = SessionLocal()
+    try:
+        cleanup_old_draft_imports(db, days=7)
+    finally:
+        db.close()
 
 # -------------------------------------------------------------------
 # Include routers

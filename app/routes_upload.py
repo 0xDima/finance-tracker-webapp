@@ -2,9 +2,10 @@
 # Role: CSV upload/import workflow routes.
 #       Implements the multi-step flow:
 #       1) /upload (select CSVs + bank mapping)
-#       2) /upload/preview (parse + editable preview table)
-#       3) /upload/review (normalize posted edits + read-only confirmation)
-#       4) /upload/save-batch (persist to DB and cleanup in-memory batch)
+#       2) /upload/preview (parse + create staging rows)
+#       3) /import/{id}/preview (editable preview table)
+#       4) /import/{id}/review (read-only confirmation)
+#       5) /import/{id}/commit (persist to DB and cleanup staging)
 #
 #       Also includes a legacy JSON upload endpoint (/upload POST) kept for debugging.
 
@@ -14,6 +15,7 @@ Routes for the CSV upload → preview → review → save flow.
 
 import os
 import uuid
+from datetime import datetime, date
 from typing import List, Any, Dict, Optional
 
 from fastapi import (
@@ -23,20 +25,21 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    Body,
+    HTTPException,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from models import Transaction
-from app.services.csv_import import parse_csvs
+from models import Transaction, ImportSession, StagingTransaction
+from app.services.csv_import import parse_csvs, parse_csv_for_bank
 from app.services.import_helpers import build_transaction_from_dict
 from app.services.auto_categorize import categorize
 from app.deps import (
     templates,
     get_db,
     PENDING_BATCHES,
-    TRANSACTION_KEY_RE,
 )
 
 router = APIRouter()
@@ -59,9 +62,30 @@ ALLOWED_CATEGORIES: List[str] = [
 ]
 
 
+def _parse_date(value: Any) -> Optional[date]:
+    if value in (None, "", "None"):
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+        except Exception:
+            return None
+    return None
+
+
+def _coerce_float(value: Any) -> Optional[float]:
+    if value in (None, "", "None"):
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
 class SuggestCategoriesRequest(BaseModel):
-    batch_id: str
-    delete_ids: List[str] = []
+    delete_ids: List[int] = []
 
 
 # -------------------------------------------------------------------
@@ -69,7 +93,10 @@ class SuggestCategoriesRequest(BaseModel):
 # -------------------------------------------------------------------
 
 @router.get("/upload", response_class=HTMLResponse)
-def upload_page(request: Request):
+def upload_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """
     Render the CSV upload page.
 
@@ -78,9 +105,31 @@ def upload_page(request: Request):
     - select which bank each file belongs to
     - submit the form to /upload/preview (main HTML flow)
     """
+    drafts = (
+        db.query(ImportSession)
+        .filter(ImportSession.status == "draft")
+        .order_by(ImportSession.created_at.desc())
+        .all()
+    )
+
+    draft_imports: List[Dict[str, Any]] = []
+    for session in drafts:
+        count = (
+            db.query(StagingTransaction)
+            .filter(StagingTransaction.import_id == session.id)
+            .count()
+        )
+        draft_imports.append(
+            {
+                "id": session.id,
+                "created_at": session.created_at,
+                "count": count,
+            }
+        )
+
     return templates.TemplateResponse(
         "upload.html",
-        {"request": request},
+        {"request": request, "draft_imports": draft_imports},
     )
 
 
@@ -103,7 +152,7 @@ async def upload_process(
     - Returns a JSON payload with parsed transactions
 
     NOTE:
-        The primary user-facing flow is /upload/preview → /upload/review → /upload/save-batch.
+        The primary user-facing flow is /upload/preview → /import/{id}/preview → /import/{id}/review → /import/{id}/commit.
     """
     batch_id = str(uuid.uuid4())
 
@@ -143,47 +192,42 @@ async def upload_process(
 # Auto-categorization endpoint (optional AI)
 # -------------------------------------------------------------------
 
-@router.post("/upload/suggest-categories")
-async def suggest_categories(payload: SuggestCategoriesRequest):
+@router.post("/import/{import_id}/suggest-categories")
+async def suggest_categories(
+    import_id: str,
+    payload: SuggestCategoriesRequest,
+    db: Session = Depends(get_db),
+):
     """
-    Suggest categories for the given batch_id.
+    Suggest categories for the given import_id.
 
     Contract:
     - Never throws to client (silent failure)
     - Returns suggestions as:
-        { temp_id: { category, confidence, reason } }
-
-    Notes:
-    - This endpoint does NOT mutate PENDING_BATCHES.
-    - Frontend decides whether to apply results into hidden inputs.
+        { staging_id: { category, confidence, reason } }
     """
     try:
-        batch_id = (payload.batch_id or "").strip()
-        if not batch_id:
-            return {"batch_id": payload.batch_id, "suggestions": {}}
-
-        batch = PENDING_BATCHES.get(batch_id)
-        if not batch:
-            return {"batch_id": batch_id, "suggestions": {}}
+        if not import_id:
+            return {"import_id": import_id, "suggestions": {}}
 
         delete_ids = set(payload.delete_ids or [])
 
+        txs = (
+            db.query(StagingTransaction)
+            .filter(StagingTransaction.import_id == import_id)
+            .order_by(StagingTransaction.id.asc())
+            .all()
+        )
+
         suggestions: Dict[str, Dict[str, Any]] = {}
 
-        order = batch.get("order") or []
-        txs = batch.get("transactions") or {}
-
-        for temp_id in order:
-            if temp_id in delete_ids:
+        for tx in txs:
+            if tx.id in delete_ids:
                 continue
 
-            tx = txs.get(temp_id)
-            if not isinstance(tx, dict):
-                continue
-
-            description = tx.get("description") or ""
-            account_name = tx.get("account_name") or ""
-            amount_eur = tx.get("amount_eur")
+            description = tx.description or ""
+            account_name = tx.account_name or ""
+            amount_eur = tx.amount_eur
 
             amt: Optional[float]
             if amount_eur in (None, "", "None"):
@@ -201,18 +245,17 @@ async def suggest_categories(payload: SuggestCategoriesRequest):
                 allowed_categories=ALLOWED_CATEGORIES,
             )
 
-            # Defensive: ensure response shape is stable
-            suggestions[temp_id] = {
+            suggestions[str(tx.id)] = {
                 "category": cat,
                 "confidence": float(conf) if isinstance(conf, (int, float)) else 0.0,
                 "reason": str(reason or ""),
             }
 
-        return {"batch_id": batch_id, "suggestions": suggestions}
+        return {"import_id": import_id, "suggestions": suggestions}
 
     except Exception:
         # Silent failure by design
-        return {"batch_id": payload.batch_id, "suggestions": {}}
+        return {"import_id": import_id, "suggestions": {}}
 
 
 # -------------------------------------------------------------------
@@ -224,19 +267,20 @@ async def upload_preview(
     request: Request,
     csv_files: List[UploadFile] = File(...),
     banks: List[str] = Form(...),
+    db: Session = Depends(get_db),
 ):
     """
     Step 1 of the main flow:
 
     - Receive uploaded CSV files and selected banks
     - Save CSV files into uploads/batch_<id> on disk
-    - Parse them into normalized transaction dicts using parse_csvs
-    - Store parsed data in PENDING_BATCHES[batch_id]
-    - Render upload_preview.html with an editable table
+    - Parse them into normalized transaction dicts
+    - Insert rows into staging_transactions tied to an import_session
+    - Redirect to /import/{import_id}/preview
     """
-    batch_id = str(uuid.uuid4())
+    import_id = str(uuid.uuid4())
 
-    folder = f"uploads/batch_{batch_id}"
+    folder = f"uploads/batch_{import_id}"
     os.makedirs(folder, exist_ok=True)
 
     saved_paths: List[str] = []
@@ -248,184 +292,248 @@ async def upload_preview(
         with open(file_location, "wb") as f:
             f.write(await file.read())
 
-    # Batch container used throughout the multi-step upload flow
-    PENDING_BATCHES[batch_id] = {
-        "files": saved_paths,
-        "transactions": {},
-        "order": [],
-        "banks": banks,
-    }
-    batch = PENDING_BATCHES[batch_id]
+    session = ImportSession(id=import_id, status="draft")
+    db.add(session)
+    db.flush()
 
-    parse_csvs(batch, batch_id, saved_paths, banks)
+    staged_rows: List[StagingTransaction] = []
 
-    # Convert internal store into a list tailored for the template (temp_id is used as the stable key)
-    transactions_for_template: List[Dict[str, Any]] = []
-    for temp_id in batch["order"]:
-        tx_data = batch["transactions"][temp_id].copy()
-        tx_data["temp_id"] = temp_id
-        transactions_for_template.append(tx_data)
+    for file_path, bank in zip(saved_paths, banks):
+        rows = parse_csv_for_bank(file_path, bank)
+        for row in rows:
+            staged_rows.append(
+                StagingTransaction(
+                    import_id=import_id,
+                    date=_parse_date(row.get("date")),
+                    description=row.get("description") or "",
+                    currency_original=row.get("currency_original") or None,
+                    amount_original=_coerce_float(row.get("amount_original")),
+                    amount_eur=_coerce_float(row.get("amount_eur")),
+                    account_name=row.get("account_name") or "",
+                    category=row.get("category") or None,
+                    notes=row.get("notes") or "",
+                )
+            )
+
+    if staged_rows:
+        db.add_all(staged_rows)
+    db.commit()
+
+    return RedirectResponse(url=f"/import/{import_id}/preview", status_code=303)
+
+
+# -------------------------------------------------------------------
+# Step 1b – load staging rows → show editable preview
+# -------------------------------------------------------------------
+
+@router.get("/import/{import_id}/preview", response_class=HTMLResponse)
+async def import_preview(
+    request: Request,
+    import_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Load staging rows for a given import session and render the preview table.
+    """
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
+        raise HTTPException(status_code=404, detail="Import session not found")
+
+    transactions = (
+        db.query(StagingTransaction)
+        .filter(StagingTransaction.import_id == import_id)
+        .order_by(StagingTransaction.id.asc())
+        .all()
+    )
 
     return templates.TemplateResponse(
         "upload_preview.html",
         {
             "request": request,
-            "batch_id": batch_id,
-            "transactions": transactions_for_template,
+            "import_id": import_id,
+            "transactions": transactions,
         },
     )
 
 
 # -------------------------------------------------------------------
-# Step 2 – read edited form → show read-only review
+# Step 2 – show read-only review
 # -------------------------------------------------------------------
 
-@router.post("/upload/review", response_class=HTMLResponse)
-async def upload_review(request: Request):
+@router.get("/import/{import_id}/review", response_class=HTMLResponse)
+async def import_review(
+    request: Request,
+    import_id: str,
+    db: Session = Depends(get_db),
+):
     """
-    Step 2 of the main flow:
-
-    Called when the user continues from the preview page.
-
-    Responsibilities:
-    - Read all form fields from upload_preview.html
-    - Parse nested field names like transactions[t1][date] via TRANSACTION_KEY_RE
-    - Group fields by temp_id into raw_tx dicts
-    - Skip rows marked for deletion (delete_ids)
-    - Convert numeric fields (amount_original, amount_eur) when possible
-    - Store the cleaned list in PENDING_BATCHES[batch_id]["final"]
-    - Render upload_review.html (read-only review table)
+    Render the read-only review table from staging rows.
     """
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
+        raise HTTPException(status_code=404, detail="Import session not found")
 
-    form = await request.form()
-
-    batch_id = form.get("batch_id")
-    delete_ids: List[str] = form.getlist("delete_ids")
-
-    # raw_tx[temp_id] -> { field: value, ... }
-    raw_tx: Dict[str, Dict[str, Any]] = {}
-
-    for key, value in form.items():
-        match = TRANSACTION_KEY_RE.match(key)
-        if not match:
-            continue
-
-        temp_id = match.group("temp_id")
-        field = match.group("field")
-
-        if temp_id not in raw_tx:
-            raw_tx[temp_id] = {}
-
-        raw_tx[temp_id][field] = value
-
-    cleaned: List[Dict[str, Any]] = []
-
-    for temp_id, tx_data in raw_tx.items():
-        if temp_id in delete_ids:
-            continue
-
-        # Build a normalized transaction dict for the final review step
-        tx: Dict[str, Any] = {
-            "temp_id": temp_id,
-            "date": tx_data.get("date") or "",
-            "account_name": tx_data.get("account_name") or "",
-            "description": tx_data.get("description") or "",
-            "currency_original": tx_data.get("currency_original") or "",
-            "category": tx_data.get("category") or "",
-            "notes": tx_data.get("notes") or "",
-        }
-
-        # Amount fields are best-effort conversions; invalid values become None
-        try:
-            tx["amount_original"] = float(tx_data.get("amount_original"))
-        except Exception:
-            tx["amount_original"] = None
-
-        raw_eur = tx_data.get("amount_eur")
-        if raw_eur in (None, "", "None"):
-            tx["amount_eur"] = None
-        else:
-            try:
-                tx["amount_eur"] = float(raw_eur)
-            except Exception:
-                tx["amount_eur"] = None
-
-        cleaned.append(tx)
-
-    # Persist cleaned rows into the in-memory batch for /upload/save-batch
-    if batch_id:
-        if batch_id not in PENDING_BATCHES:
-            PENDING_BATCHES[batch_id] = {}
-        PENDING_BATCHES[batch_id]["final"] = cleaned
+    transactions = (
+        db.query(StagingTransaction)
+        .filter(StagingTransaction.import_id == import_id)
+        .order_by(StagingTransaction.id.asc())
+        .all()
+    )
 
     return templates.TemplateResponse(
         "upload_review.html",
         {
             "request": request,
-            "batch_id": batch_id,
-            "transactions": cleaned,
+            "import_id": import_id,
+            "transactions": transactions,
         },
     )
 
 
 # -------------------------------------------------------------------
-# Step 3 – save cleaned batch into the DB
+# Step 2b – apply deletes from preview (optional) then show review
 # -------------------------------------------------------------------
 
-@router.post("/upload/save-batch")
-async def save_batch(
-    batch_id: str = Form(...),
+@router.post("/import/{import_id}/review", response_class=HTMLResponse)
+async def import_review_post(
+    request: Request,
+    import_id: str,
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
+        raise HTTPException(status_code=404, detail="Import session not found")
+
+    form = await request.form()
+    delete_ids_raw: List[str] = form.getlist("delete_ids")
+    delete_ids: List[int] = []
+    for raw in delete_ids_raw:
+        try:
+            delete_ids.append(int(raw))
+        except Exception:
+            continue
+
+    if delete_ids:
+        db.query(StagingTransaction).filter(
+            StagingTransaction.import_id == import_id,
+            StagingTransaction.id.in_(delete_ids),
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    transactions = (
+        db.query(StagingTransaction)
+        .filter(StagingTransaction.import_id == import_id)
+        .order_by(StagingTransaction.id.asc())
+        .all()
+    )
+
+    return templates.TemplateResponse(
+        "upload_review.html",
+        {
+            "request": request,
+            "import_id": import_id,
+            "transactions": transactions,
+        },
+    )
+
+
+# -------------------------------------------------------------------
+# Step 3 – save staging batch into the DB
+# -------------------------------------------------------------------
+
+@router.post("/import/{import_id}/commit")
+async def save_import(
+    import_id: str,
     db: Session = Depends(get_db),
 ):
     """
-    Step 3 of the main flow:
-
-    Called when the user clicks "Save to database" on the review page.
-
-    Responsibilities:
-    - Read cleaned tx dicts from PENDING_BATCHES[batch_id]["final"]
-    - Convert each dict into a Transaction ORM object (build_transaction_from_dict)
-    - Insert them into the database in one transaction (commit/rollback)
-    - Clean up the batch from memory
-    - Redirect to /transactions
+    Commit staged rows into the main transactions table and cleanup staging.
     """
-
-    batch = PENDING_BATCHES.get(batch_id)
-
-    if not batch or "final" not in batch:
-        print(f"[save-batch] No final data found for batch_id={batch_id!r}")
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
         return RedirectResponse(url="/transactions", status_code=303)
 
-    final = batch["final"]  # list of dicts from /upload/review
+    staging_rows = (
+        db.query(StagingTransaction)
+        .filter(StagingTransaction.import_id == import_id)
+        .order_by(StagingTransaction.id.asc())
+        .all()
+    )
 
-    print(f"\n[save-batch] Preparing to insert {len(final)} transactions for batch_id={batch_id!r}")
+    if not staging_rows:
+        return RedirectResponse(url="/transactions", status_code=303)
+
+    validation_errors: List[str] = []
+    for row in staging_rows:
+        if row.date is None:
+            validation_errors.append(f"Row {row.id}: missing date")
+        if row.amount_original is None:
+            validation_errors.append(f"Row {row.id}: missing amount")
+        if not (row.description or "").strip():
+            validation_errors.append(f"Row {row.id}: missing description")
+
+    if validation_errors:
+        error_html = "<br>".join(validation_errors)
+        return HTMLResponse(
+            f"""
+            <html>
+            <body style="font-family:sans-serif; padding:20px;">
+                <h1>Cannot commit import</h1>
+                <p>Please fix the following rows in the preview table:</p>
+                <p>{error_html}</p>
+                <a href="/import/{import_id}/preview">Back to preview</a>
+            </body>
+            </html>
+            """,
+            status_code=400,
+        )
 
     try:
         orm_objects: List[Transaction] = []
 
-        for i, tx_dict in enumerate(final, start=1):
-            try:
-                tx_obj = build_transaction_from_dict(tx_dict)
-                orm_objects.append(tx_obj)
-                print(f"  [#{i}] {tx_obj.date} | {tx_obj.description} | {tx_obj.amount_eur} EUR | {tx_obj.category}")
-            except Exception as e:
-                print(f"[save-batch] ERROR converting tx_dict #{i}: {e!r}")
-                print("  Raw dict:", tx_dict)
+        for row in staging_rows:
+            tx_dict = {
+                "date": row.date,
+                "description": row.description,
+                "currency_original": row.currency_original,
+                "amount_original": row.amount_original,
+                "amount_eur": row.amount_eur,
+                "account_name": row.account_name,
+                "category": row.category,
+                "notes": row.notes,
+            }
+            tx_obj = build_transaction_from_dict(tx_dict)
+            orm_objects.append(tx_obj)
 
         if not orm_objects:
-            print("[save-batch] No valid transactions to insert.")
             return RedirectResponse(url="/transactions", status_code=303)
 
         db.add_all(orm_objects)
+        db.query(StagingTransaction).filter(StagingTransaction.import_id == import_id).delete(
+            synchronize_session=False
+        )
+        session.status = "committed"
+        session.committed_at = datetime.utcnow()
         db.commit()
-        print(f"[save-batch] Successfully inserted {len(orm_objects)} transactions for batch {batch_id!r}")
-
-        # Batch is no longer needed once persisted
-        PENDING_BATCHES.pop(batch_id, None)
 
     except Exception as e:
         db.rollback()
-        print(f"[save-batch] ERROR during DB insert: {e!r}")
         return HTMLResponse(
             f"""
             <html>
@@ -440,3 +548,119 @@ async def save_batch(
         )
 
     return RedirectResponse(url="/transactions", status_code=303)
+
+
+# -------------------------------------------------------------------
+# Staging row CRUD
+# -------------------------------------------------------------------
+
+
+@router.post("/import/{import_id}/staging")
+async def create_staging_row(
+    import_id: str,
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
+        raise HTTPException(status_code=404, detail="Import session not found")
+
+    row = StagingTransaction(
+        import_id=import_id,
+        date=None,
+        description="",
+        currency_original=None,
+        amount_original=None,
+        amount_eur=None,
+        account_name="",
+        category=None,
+        notes="",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "import_id": row.import_id,
+    }
+
+
+@router.patch("/import/{import_id}/staging/{row_id}")
+async def update_staging_row(
+    import_id: str,
+    row_id: int,
+    payload: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+):
+    row = (
+        db.query(StagingTransaction)
+        .filter(
+            StagingTransaction.id == row_id,
+            StagingTransaction.import_id == import_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Staging row not found")
+
+    allowed = {
+        "date",
+        "description",
+        "currency_original",
+        "amount_original",
+        "amount_eur",
+        "account_name",
+        "category",
+        "notes",
+    }
+
+    for field, value in payload.items():
+        if field not in allowed:
+            raise HTTPException(status_code=400, detail=f"Unsupported field: {field}")
+
+        if field == "date":
+            parsed = _parse_date(value)
+            if value not in (None, "", "None") and parsed is None:
+                raise HTTPException(status_code=422, detail="Invalid date format")
+            setattr(row, field, parsed)
+        elif field in ("amount_original", "amount_eur"):
+            parsed = _coerce_float(value)
+            if value not in (None, "", "None") and parsed is None:
+                raise HTTPException(status_code=422, detail="Invalid amount")
+            setattr(row, field, parsed)
+        elif field == "currency_original":
+            if value in (None, "", "None"):
+                setattr(row, field, None)
+            else:
+                setattr(row, field, str(value).upper()[:3])
+        else:
+            setattr(row, field, "" if value is None else str(value))
+
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/import/{import_id}")
+async def delete_import(
+    import_id: str,
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(ImportSession)
+        .filter(ImportSession.id == import_id)
+        .first()
+    )
+    if not session or session.status != "draft":
+        raise HTTPException(status_code=404, detail="Import session not found")
+
+    db.query(StagingTransaction).filter(StagingTransaction.import_id == import_id).delete(
+        synchronize_session=False
+    )
+    db.query(ImportSession).filter(ImportSession.id == import_id).delete(
+        synchronize_session=False
+    )
+    db.commit()
+    return JSONResponse({"status": "deleted", "import_id": import_id})

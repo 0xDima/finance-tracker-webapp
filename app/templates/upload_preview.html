@@ -1,5 +1,5 @@
 <!-- app/templates/upload_preview.html -->
-<!-- Role: Upload Preview Jinja2 template — renders the pre-import review screen for a parsed batch:
+<!-- Role: Upload Preview Jinja2 template — renders the pre-import review screen for a staged import:
      shows a scrollable transactions table, allows excluding rows, editing fields inline (via upload_preview.js),
      selecting categories, and adding manual transactions before continuing to the review/commit step. -->
 <!DOCTYPE html>
@@ -12,9 +12,9 @@
 </head>
 <body>
     <div class="page-container">
-        <!-- Posts the edited transaction payload forward into the next upload step (/upload/review) -->
-        <form id="preview-form" method="post" action="/upload/review">
-            <input type="hidden" name="batch_id" value="{{ batch_id }}">
+        <!-- Posts delete selections forward into the next upload step (/import/{id}/review) -->
+        <form id="preview-form" method="post" action="/import/{{ import_id }}/review">
+            <input type="hidden" name="import_id" value="{{ import_id }}">
 
             <header class="page-header">
                 <div class="header-content">
@@ -24,6 +24,9 @@
                     </div>
                     <div class="header-right">
                         <a href="/dashboard" class="btn-secondary">← Dashboard</a>
+                        <button type="button" class="btn-ghost" id="delete-import-btn" data-import-id="{{ import_id }}">
+                            Discard import
+                        </button>
                     </div>
                 </div>
             </header>
@@ -36,6 +39,9 @@
                 <div class="summary-item">
                     <span class="summary-label">Ready to Import</span>
                     <span class="summary-value" id="import-count">{{ transactions|length }}</span>
+                </div>
+                <div class="summary-item save-indicator" id="save-indicator" aria-live="polite">
+                    Saved ✓
                 </div>
                 <div class="summary-hint">
                     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -65,19 +71,22 @@
                         </thead>
                         <tbody id="tx-tbody">
                             {% for tx in transactions %}
-                            <!-- Each row is keyed by a temp_id to keep edits stable across the multi-step upload flow -->
-                            <tr class="tx-row" data-temp-id="{{ tx.temp_id }}">
+                            <!-- Each row is keyed by a stable staging ID -->
+                            <tr class="tx-row" data-row-id="{{ tx.id }}">
                                 <td class="cell-delete">
-                                    <input type="checkbox" class="delete-checkbox checkbox" name="delete_ids" value="{{ tx.temp_id }}">
+                                    <input type="checkbox" class="delete-checkbox checkbox" name="delete_ids" value="{{ tx.id }}">
                                 </td>
                                 <td class="cell-temp-id">
-                                    <span class="temp-id">{{ tx.temp_id }}</span>
+                                    <span class="temp-id">{{ tx.id }}</span>
                                 </td>
-                                <td class="cell-date" data-field="date">{{ tx.date }}</td>
-                                <td class="cell-account" data-field="account_name">{{ tx.account_name }}</td>
-                                <td class="cell-description" data-field="description">{{ tx.description }}</td>
+                                <td class="cell-date" data-field="date">{{ tx.date or '' }}</td>
+                                <td class="cell-account" data-field="account_name">{{ tx.account_name or '' }}</td>
+                                <td class="cell-description" data-field="description">{{ tx.description or '' }}</td>
                                 <td class="cell-amount-orig" data-field="amount_original">
-                                    {{ tx.amount_original }} {{ tx.currency_original }}
+                                    {% if tx.amount_original is not none %}
+                                        {{ tx.amount_original }}
+                                    {% endif %}
+                                    {{ tx.currency_original or "" }}
                                 </td>
                                 <td class="cell-amount-eur" data-field="amount_eur">
                                     {% set raw_amt = tx.amount_eur %}
@@ -95,7 +104,7 @@
                                 <td class="cell-category">
                                     {% set current_cat = tx.category or '' %}
                                     <!-- Visible category select; JS syncs its value into the hidden input below -->
-                                    <select class="category-select" data-temp-id="{{ tx.temp_id }}">
+                                    <select class="category-select" data-row-id="{{ tx.id }}">
                                         <option value="" {% if current_cat == '' %}selected{% endif %}>Uncategorized</option>
                                         <option value="Groceries" {% if current_cat == 'Groceries' %}selected{% endif %}>Groceries</option>
                                         <option value="Transportation" {% if current_cat == 'Transportation' %}selected{% endif %}>Transportation</option>
@@ -118,16 +127,16 @@
                                     {% endif %}
                                 </td>
 
-                                <!-- Hidden inputs are the source of truth posted to /upload/review; JS inline editing updates these. -->
+                                <!-- Hidden inputs are kept in sync with inline edits for client-side rendering. -->
                                 <td class="hidden-inputs">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][date]" value="{{ tx.date }}">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][account_name]" value="{{ tx.account_name }}">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][description]" value="{{ tx.description }}">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][amount_original]" value="{{ tx.amount_original }}">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][currency_original]" value="{{ tx.currency_original }}">
-                                    <input type="number" step="0.01" name="transactions[{{ tx.temp_id }}][amount_eur]" value="{{ tx.amount_eur if tx.amount_eur is not none else '' }}" class="amount-eur-input">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][category]" value="{{ tx.category or '' }}">
-                                    <input type="hidden" name="transactions[{{ tx.temp_id }}][notes]" value="{{ tx.notes or '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][date]" value="{{ tx.date or '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][account_name]" value="{{ tx.account_name or '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][description]" value="{{ tx.description or '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][amount_original]" value="{{ tx.amount_original if tx.amount_original is not none else '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][currency_original]" value="{{ tx.currency_original or '' }}">
+                                    <input type="number" step="0.01" name="transactions[{{ tx.id }}][amount_eur]" value="{{ tx.amount_eur if tx.amount_eur is not none else '' }}" class="amount-eur-input">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][category]" value="{{ tx.category or '' }}">
+                                    <input type="hidden" name="transactions[{{ tx.id }}][notes]" value="{{ tx.notes or '' }}">
                                 </td>
                             </tr>
                             {% endfor %}

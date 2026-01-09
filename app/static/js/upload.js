@@ -14,6 +14,7 @@ const previewTitle = document.getElementById("preview-title");
 const previewClose = document.getElementById("preview-close");
 
 let files = [];
+let fileIdCounter = 0;
 
 // Sync `files` array with the native <input type="file"> element so form submission includes the current selection.
 function syncInputFiles() {
@@ -76,7 +77,17 @@ function renderFileList() {
         previewBtn.textContent = "Preview";
         previewBtn.addEventListener("click", () => handlePreview(file));
 
-        row.append(name, meta, bankSelect, previewBtn);
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "remove-file-btn";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", () => {
+            files = files.filter(f => f._id !== file._id);
+            syncInputFiles();
+            renderFileList();
+        });
+
+        row.append(name, meta, bankSelect, previewBtn, removeBtn);
         fileRowsContainer.appendChild(row);
     });
 }
@@ -86,9 +97,12 @@ function handleFiles(selectedFiles) {
     if (!selectedFiles || !selectedFiles.length) return;
 
     // Only accept CSV files.
-    const newFiles = Array.from(selectedFiles).filter(f =>
-        f.name.toLowerCase().endsWith(".csv")
-    );
+    const newFiles = Array.from(selectedFiles)
+        .filter(f => f.name.toLowerCase().endsWith(".csv"))
+        .map(f => {
+            f._id = `f_${Date.now()}_${fileIdCounter++}`;
+            return f;
+        });
 
     files = files.concat(newFiles);
 
@@ -198,6 +212,34 @@ uploadForm.addEventListener("submit", e => {
     }
     syncInputFiles();
 });
+
+function initDraftDeletes() {
+    const buttons = document.querySelectorAll(".draft-delete-btn");
+    if (!buttons.length) return;
+
+    buttons.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const importId = btn.dataset.importId;
+            if (!importId) return;
+            const ok = window.confirm("Delete this draft import? This cannot be undone.");
+            if (!ok) return;
+
+            try {
+                const resp = await fetch(`/import/${encodeURIComponent(importId)}`, {
+                    method: "DELETE",
+                });
+                if (!resp.ok) throw new Error("Delete failed");
+                const row = btn.closest(".draft-row");
+                if (row) row.remove();
+            } catch {
+                window.alert("Failed to delete draft import.");
+            }
+        });
+    });
+}
+
+initDraftDeletes();
+
 
 // Sticky header shadow on scroll (visual only).
 let lastScrollTop = 0;

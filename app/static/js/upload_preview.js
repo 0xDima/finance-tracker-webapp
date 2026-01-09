@@ -4,6 +4,7 @@
 //       adding new manual transactions, and optional AI auto-categorization.
 
 const AUTO_APPLY_CONFIDENCE_THRESHOLD = 0.85;
+const SAVE_DEBOUNCE_MS = 600;
 
 const ALLOWED_CATEGORIES = new Set([
   "Groceries",
@@ -21,7 +22,14 @@ const ALLOWED_CATEGORIES = new Set([
   "Income",
 ]);
 
+let IMPORT_ID = "";
+const pendingSaves = new Map();
+let activeSaveCount = 0;
+
 document.addEventListener("DOMContentLoaded", () => {
+  IMPORT_ID = getImportId();
+  setSaveIndicator("saved");
+
   // Bootstraps all interactive behaviors on the preview/review table.
   initHeaderScroll();
   initTableScroll();
@@ -30,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initCategorySelects();
   initInlineEditing();
   initAddManualTransaction();
+  initDeleteImport();
   updateImportCount();
 
   // AI auto-categorization (silent failure by design)
@@ -99,6 +108,105 @@ function updateImportCount() {
   if (el) el.textContent = count;
 }
 
+function getImportId() {
+  const input = document.querySelector('input[name="import_id"]');
+  return input ? (input.value || "").trim() : "";
+}
+
+function setSaveIndicator(state, message) {
+  const indicator = document.getElementById("save-indicator");
+  if (!indicator) return;
+
+  indicator.classList.remove("is-saving", "is-saved", "is-error");
+
+  if (state === "saving") {
+    indicator.classList.add("is-saving");
+    indicator.textContent = message || "Saving...";
+  } else if (state === "saved") {
+    indicator.classList.add("is-saved");
+    indicator.textContent = message || "Saved ✓";
+  } else if (state === "error") {
+    indicator.classList.add("is-error");
+    indicator.textContent = message || "Error";
+  } else {
+    indicator.textContent = message || "";
+  }
+}
+
+function initDeleteImport() {
+  const btn = document.getElementById("delete-import-btn");
+  if (!btn || !IMPORT_ID) return;
+
+  btn.addEventListener("click", async () => {
+    const ok = window.confirm(
+      "Discard this import? All staged rows will be deleted and cannot be recovered."
+    );
+    if (!ok) return;
+
+    try {
+      const resp = await fetch(`/import/${encodeURIComponent(IMPORT_ID)}`, {
+        method: "DELETE",
+      });
+      if (!resp.ok) throw new Error("Delete failed");
+      window.location.href = "/upload";
+    } catch {
+      window.alert("Failed to discard import. Please try again.");
+    }
+  });
+}
+
+function queueRowSave(rowId, payload, immediate = false) {
+  if (!rowId || !IMPORT_ID) return;
+
+  const existing = pendingSaves.get(rowId) || { payload: {}, timerId: null };
+  existing.payload = { ...existing.payload, ...payload };
+
+  if (existing.timerId) {
+    clearTimeout(existing.timerId);
+    existing.timerId = null;
+  }
+
+  if (immediate) {
+    pendingSaves.delete(rowId);
+    sendRowPatch(rowId, existing.payload);
+    return;
+  }
+
+  existing.timerId = setTimeout(() => {
+    pendingSaves.delete(rowId);
+    sendRowPatch(rowId, existing.payload);
+  }, SAVE_DEBOUNCE_MS);
+
+  pendingSaves.set(rowId, existing);
+}
+
+async function sendRowPatch(rowId, payload) {
+  if (!rowId || !IMPORT_ID) return;
+
+  activeSaveCount += 1;
+  setSaveIndicator("saving");
+
+  try {
+    const resp = await fetch(`/import/${encodeURIComponent(IMPORT_ID)}/staging/${rowId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      throw new Error("Save failed");
+    }
+
+    if (activeSaveCount > 0) activeSaveCount -= 1;
+    if (activeSaveCount === 0) {
+      setSaveIndicator("saved");
+    }
+  } catch (err) {
+    activeSaveCount = Math.max(0, activeSaveCount - 1);
+    setSaveIndicator("error");
+  }
+}
+
 function initCategorySelects(root = document) {
   // Keeps the visible <select> in sync with the hidden form input used by the backend.
   // Also marks the row as "touched" when the user changes the category manually.
@@ -106,17 +214,19 @@ function initCategorySelects(root = document) {
     if (sel.dataset.bound === "1") return;
     sel.dataset.bound = "1";
 
-    const tempId = sel.dataset.tempId;
-    if (!tempId) return;
+    const rowId = sel.dataset.rowId;
+    if (!rowId) return;
 
     sel.addEventListener("change", () => {
       const hidden = document.querySelector(
-        `input[name="transactions[${cssEscape(tempId)}][category]"]`
+        `input[name="transactions[${cssEscape(rowId)}][category]"]`
       );
       if (hidden) hidden.value = sel.value;
 
       const row = sel.closest("tr.tx-row");
       if (row) row.dataset.categoryTouched = "1";
+
+      queueRowSave(rowId, { category: sel.value }, true);
     });
   });
 }
@@ -136,43 +246,49 @@ function initInlineEditing() {
     const row = cell.closest("tr.tx-row");
     if (!row) return;
 
-    const tempId = row.dataset.tempId;
+    const rowId = row.dataset.rowId;
     const field = cell.dataset.field;
-    if (!tempId || !field) return;
+    if (!rowId || !field) return;
 
-    startEditingCell(cell, tempId, field);
+    startEditingCell(cell, rowId, field);
   });
 }
 
-function getHiddenInput(tempId, field) {
+function getHiddenInput(rowId, field) {
   // Finds the hidden form input backing a given transaction field.
   return document.querySelector(
-    `input[name="transactions[${cssEscape(tempId)}][${cssEscape(field)}]"]`
+    `input[name="transactions[${cssEscape(rowId)}][${cssEscape(field)}]"]`
   );
 }
 
-function startEditingCell(cell, tempId, field) {
+function startEditingCell(cell, rowId, field) {
   // Converts a table cell into an <input>, then commits back into hidden inputs on blur/Enter.
   if (cell.classList.contains("editing")) return;
 
   let initialValue = "";
+  const originalValue = {};
 
   if (field === "amount_original") {
     // show combined: "<amount> <currency>"
-    const amtInp = getHiddenInput(tempId, "amount_original");
-    const curInp = getHiddenInput(tempId, "currency_original");
+    const amtInp = getHiddenInput(rowId, "amount_original");
+    const curInp = getHiddenInput(rowId, "currency_original");
     const a = amtInp ? amtInp.value || "" : "";
     const c = curInp ? curInp.value || "" : "";
     initialValue = a && c ? `${a} ${c}` : a || c || "";
+    originalValue.amount_original = a;
+    originalValue.currency_original = c;
   } else if (field === "amount_eur") {
-    const inp = getHiddenInput(tempId, "amount_eur");
+    const inp = getHiddenInput(rowId, "amount_eur");
     if (inp) initialValue = inp.value || "";
+    originalValue.amount_eur = initialValue;
   } else if (field === "notes") {
-    const inp = getHiddenInput(tempId, "notes");
+    const inp = getHiddenInput(rowId, "notes");
     if (inp) initialValue = inp.value || "";
+    originalValue.notes = initialValue;
   } else {
-    const inp = getHiddenInput(tempId, field);
+    const inp = getHiddenInput(rowId, field);
     initialValue = inp ? inp.value || "" : cell.textContent.trim();
+    originalValue[field] = initialValue;
   }
 
   const input = document.createElement("input");
@@ -192,8 +308,8 @@ function startEditingCell(cell, tempId, field) {
 
     if (field === "amount_original") {
       // accepts "123.45 USD" or just "123.45" (keeps currency) or just "USD" (keeps amount)
-      const amtInp = getHiddenInput(tempId, "amount_original");
-      const curInp = getHiddenInput(tempId, "currency_original");
+      const amtInp = getHiddenInput(rowId, "amount_original");
+      const curInp = getHiddenInput(rowId, "currency_original");
       const prevAmt = amtInp ? amtInp.value || "" : "";
       const prevCur = curInp ? curInp.value || "" : "";
 
@@ -204,19 +320,23 @@ function startEditingCell(cell, tempId, field) {
       if (amtInp) amtInp.value = nextAmt;
       if (curInp) curInp.value = nextCur;
 
-      updateAmountOriginalCell(cell, tempId);
+      updateAmountOriginalCell(cell, rowId);
+      queueRowSave(rowId, { amount_original: nextAmt, currency_original: nextCur }, true);
     } else if (field === "amount_eur") {
-      const inp = getHiddenInput(tempId, "amount_eur");
+      const inp = getHiddenInput(rowId, "amount_eur");
       if (inp) inp.value = newVal;
-      updateAmountEurCell(cell, tempId);
+      updateAmountEurCell(cell, rowId);
+      queueRowSave(rowId, { amount_eur: newVal }, true);
     } else if (field === "notes") {
-      const inp = getHiddenInput(tempId, "notes");
+      const inp = getHiddenInput(rowId, "notes");
       if (inp) inp.value = newVal;
       updateNotesCell(cell, newVal);
+      queueRowSave(rowId, { notes: newVal }, true);
     } else {
-      const inp = getHiddenInput(tempId, field);
+      const inp = getHiddenInput(rowId, field);
       if (inp) inp.value = newVal;
       cell.textContent = newVal;
+      queueRowSave(rowId, { [field]: newVal }, true);
     }
   };
 
@@ -224,19 +344,72 @@ function startEditingCell(cell, tempId, field) {
     // Restores current hidden input value into the cell without modifying data.
     cell.classList.remove("editing");
     if (field === "amount_original") {
-      updateAmountOriginalCell(cell, tempId);
+      const amtInp = getHiddenInput(rowId, "amount_original");
+      const curInp = getHiddenInput(rowId, "currency_original");
+      if (amtInp && Object.hasOwn(originalValue, "amount_original")) {
+        amtInp.value = originalValue.amount_original;
+      }
+      if (curInp && Object.hasOwn(originalValue, "currency_original")) {
+        curInp.value = originalValue.currency_original;
+      }
+      updateAmountOriginalCell(cell, rowId);
+      queueRowSave(
+        rowId,
+        {
+          amount_original: originalValue.amount_original,
+          currency_original: originalValue.currency_original,
+        },
+        true
+      );
     } else if (field === "amount_eur") {
-      updateAmountEurCell(cell, tempId);
+      const inp = getHiddenInput(rowId, "amount_eur");
+      if (inp && Object.hasOwn(originalValue, "amount_eur")) {
+        inp.value = originalValue.amount_eur;
+      }
+      updateAmountEurCell(cell, rowId);
+      queueRowSave(rowId, { amount_eur: originalValue.amount_eur }, true);
     } else if (field === "notes") {
-      const inp = getHiddenInput(tempId, "notes");
-      const val = inp ? inp.value || "" : "";
+      const inp = getHiddenInput(rowId, "notes");
+      const val = Object.hasOwn(originalValue, "notes") ? originalValue.notes : "";
+      if (inp) inp.value = val;
       updateNotesCell(cell, val);
+      queueRowSave(rowId, { notes: val }, true);
     } else {
-      const inp = getHiddenInput(tempId, field);
-      const val = inp ? inp.value || "" : "";
+      const inp = getHiddenInput(rowId, field);
+      const val = Object.hasOwn(originalValue, field) ? originalValue[field] : "";
+      if (inp) inp.value = val;
       cell.textContent = val;
+      queueRowSave(rowId, { [field]: val }, true);
     }
   };
+
+  input.addEventListener("input", () => {
+    const liveVal = input.value.trim();
+    if (field === "amount_original") {
+      const amtInp = getHiddenInput(rowId, "amount_original");
+      const curInp = getHiddenInput(rowId, "currency_original");
+      const prevAmt = amtInp ? amtInp.value || "" : "";
+      const prevCur = curInp ? curInp.value || "" : "";
+      const parsed = parseAmountCurrency(liveVal);
+      const nextAmt = parsed.amount !== null ? String(parsed.amount) : prevAmt;
+      const nextCur = parsed.currency !== null ? parsed.currency : prevCur;
+      if (amtInp) amtInp.value = nextAmt;
+      if (curInp) curInp.value = nextCur;
+      queueRowSave(rowId, { amount_original: nextAmt, currency_original: nextCur });
+    } else if (field === "amount_eur") {
+      const inp = getHiddenInput(rowId, "amount_eur");
+      if (inp) inp.value = liveVal;
+      queueRowSave(rowId, { amount_eur: liveVal });
+    } else if (field === "notes") {
+      const inp = getHiddenInput(rowId, "notes");
+      if (inp) inp.value = liveVal;
+      queueRowSave(rowId, { notes: liveVal });
+    } else {
+      const inp = getHiddenInput(rowId, field);
+      if (inp) inp.value = liveVal;
+      queueRowSave(rowId, { [field]: liveVal });
+    }
+  });
 
   // Blur commits edits so users can click away naturally.
   input.addEventListener("blur", () => commitEdit());
@@ -252,10 +425,10 @@ function startEditingCell(cell, tempId, field) {
   });
 }
 
-function updateAmountOriginalCell(cell, tempId) {
+function updateAmountOriginalCell(cell, rowId) {
   // Renders combined "<amount> <currency>" view from the underlying hidden inputs.
-  const amtInp = getHiddenInput(tempId, "amount_original");
-  const currInp = getHiddenInput(tempId, "currency_original");
+  const amtInp = getHiddenInput(rowId, "amount_original");
+  const currInp = getHiddenInput(rowId, "currency_original");
 
   const amt = amtInp ? amtInp.value || "" : "";
   const curr = currInp ? currInp.value || "" : "";
@@ -268,9 +441,9 @@ function updateAmountOriginalCell(cell, tempId) {
   cell.textContent = curr ? `${amt} ${curr}` : amt;
 }
 
-function updateAmountEurCell(cell, tempId) {
+function updateAmountEurCell(cell, rowId) {
   // Renders the EUR amount as a styled pill (positive/negative/empty).
-  const inp = getHiddenInput(tempId, "amount_eur");
+  const inp = getHiddenInput(rowId, "amount_eur");
   const raw = inp ? inp.value : null;
 
   cell.innerHTML = "";
@@ -315,9 +488,7 @@ function initAutoCategorizeOnLoad() {
   const form = document.getElementById("preview-form");
   if (!form) return;
 
-  const batchInput = form.querySelector('input[name="batch_id"]');
-  const batchId = batchInput ? (batchInput.value || "").trim() : "";
-  if (!batchId) return;
+  if (!IMPORT_ID) return;
 
   // Fire and forget (silent failure)
   (async () => {
@@ -326,10 +497,10 @@ function initAutoCategorizeOnLoad() {
         .map((cb) => cb.value)
         .filter(Boolean);
 
-      const resp = await fetch("/upload/suggest-categories", {
+      const resp = await fetch(`/import/${encodeURIComponent(IMPORT_ID)}/suggest-categories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batch_id: batchId, delete_ids: deleteIds }),
+        body: JSON.stringify({ delete_ids: deleteIds }),
       });
 
       if (!resp.ok) return;
@@ -348,11 +519,11 @@ function initAutoCategorizeOnLoad() {
 }
 
 function applyCategorySuggestions(suggestions) {
-  for (const [tempId, sug] of Object.entries(suggestions)) {
-    if (!tempId) continue;
+  for (const [rowId, sug] of Object.entries(suggestions)) {
+    if (!rowId) continue;
     if (!sug || typeof sug !== "object") continue;
 
-    const row = document.querySelector(`tr.tx-row[data-temp-id="${escapeAttr(tempId)}"]`);
+    const row = document.querySelector(`tr.tx-row[data-row-id="${escapeAttr(rowId)}"]`);
     if (!row) continue;
 
     // Skip deleted rows
@@ -364,7 +535,7 @@ function applyCategorySuggestions(suggestions) {
     if (row.dataset.categoryTouched === "1") continue;
 
     const hidden = document.querySelector(
-      `input[name="transactions[${cssEscape(tempId)}][category]"]`
+      `input[name="transactions[${cssEscape(rowId)}][category]"]`
     );
     if (!hidden) continue;
 
@@ -385,6 +556,7 @@ function applyCategorySuggestions(suggestions) {
 
     sel.value = category;
     hidden.value = category;
+    queueRowSave(rowId, { category }, true);
 
     const pct = Math.round(confidence * 100);
     sel.title = reason ? `${reason} (${pct}%)` : `AI suggested (${pct}%)`;
@@ -402,9 +574,11 @@ function initAddManualTransaction() {
   const tbody = document.getElementById("tx-tbody");
   if (!btn || !tbody) return;
 
-  btn.addEventListener("click", () => {
-    const tempId = generateManualTempId();
-    const row = buildManualRow(tempId);
+  btn.addEventListener("click", async () => {
+    const created = await createManualRow();
+    if (!created) return;
+
+    const row = buildManualRow(created.id);
     tbody.appendChild(row);
 
     // Bind behaviors for the new row (delete toggle, category select sync, inline edits).
@@ -416,41 +590,56 @@ function initAddManualTransaction() {
     // Scroll to bottom + focus date cell for quick entry.
     row.scrollIntoView({ behavior: "smooth", block: "end" });
     const dateCell = row.querySelector('td[data-field="date"]');
-    if (dateCell) startEditingCell(dateCell, tempId, "date");
+    if (dateCell) startEditingCell(dateCell, String(created.id), "date");
   });
 }
 
-function buildManualRow(tempId) {
+async function createManualRow() {
+  if (!IMPORT_ID) return null;
+  try {
+    const resp = await fetch(`/import/${encodeURIComponent(IMPORT_ID)}/staging`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+function buildManualRow(rowId) {
   // Constructs a new transaction <tr> matching the same hidden input schema as imported rows.
   const tr = document.createElement("tr");
   tr.className = "tx-row manual-row";
-  tr.dataset.tempId = tempId;
+  tr.dataset.rowId = rowId;
 
   tr.innerHTML = `
         <td class="cell-delete">
             <input type="checkbox" class="delete-checkbox checkbox" name="delete_ids" value="${escapeHtml(
-              tempId
+              rowId
             )}">
         </td>
-        <td class="cell-temp-id"><span class="temp-id">${escapeHtml(tempId)}</span></td>
+        <td class="cell-temp-id"><span class="temp-id">${escapeHtml(rowId)}</span></td>
         <td class="cell-date" data-field="date"></td>
         <td class="cell-account" data-field="account_name"></td>
         <td class="cell-description" data-field="description"></td>
         <td class="cell-amount-orig" data-field="amount_original"></td>
         <td class="cell-amount-eur" data-field="amount_eur"><span class="amount">—</span></td>
         <td class="cell-category">
-            ${buildCategorySelectHtml(tempId)}
+            ${buildCategorySelectHtml(rowId)}
         </td>
         <td class="cell-notes" data-field="notes"></td>
         <td class="hidden-inputs">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][date]" value="">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][account_name]" value="">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][description]" value="">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][amount_original]" value="">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][currency_original]" value="">
-            <input type="number" step="0.01" name="transactions[${escapeHtml(tempId)}][amount_eur]" value="" class="amount-eur-input">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][category]" value="">
-            <input type="hidden" name="transactions[${escapeHtml(tempId)}][notes]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][date]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][account_name]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][description]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][amount_original]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][currency_original]" value="">
+            <input type="number" step="0.01" name="transactions[${escapeHtml(rowId)}][amount_eur]" value="" class="amount-eur-input">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][category]" value="">
+            <input type="hidden" name="transactions[${escapeHtml(rowId)}][notes]" value="">
         </td>
     `;
 
@@ -470,10 +659,10 @@ function buildManualRow(tempId) {
   return tr;
 }
 
-function buildCategorySelectHtml(tempId) {
+function buildCategorySelectHtml(rowId) {
   // Keep exact same options as template
   return `
-      <select class="category-select" data-temp-id="${escapeHtml(tempId)}">
+      <select class="category-select" data-row-id="${escapeHtml(rowId)}">
         <option value="" selected>Uncategorized</option>
         <option value="Groceries">Groceries</option>
         <option value="Transportation">Transportation</option>
@@ -490,13 +679,6 @@ function buildCategorySelectHtml(tempId) {
         <option value="Income">Income</option>
       </select>
     `;
-}
-
-function generateManualTempId() {
-  // unique & form-safe
-  const t = Date.now().toString(36);
-  const r = Math.random().toString(36).slice(2, 7);
-  return `manual_${t}_${r}`;
 }
 
 function parseAmountCurrency(raw) {
