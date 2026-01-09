@@ -40,3 +40,4 @@ notes/
 .env_dir_backup
 # Logs
 *.log
+*.csv
